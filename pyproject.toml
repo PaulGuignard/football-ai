@@ -1,0 +1,27 @@
+[project]
+name = "football-ai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Paul Guignard", email = "guignardpa@cy-tech.fr" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "duckdb>=1.5.6",
+    "pandas>=2.3.3",
+    "statsbombpy>=1.22.0",
+]
+
+[project.scripts]
+football-ai = "football_ai:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
