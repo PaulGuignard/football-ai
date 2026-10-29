@@ -33,7 +33,11 @@ def main() -> None:
     with duckdb.connect(str(DB_PATH), read_only=True) as con:
         for title, query in split_queries(sql_file.read_text()):
             print(title or query)
-            con.sql(query).show(max_rows=50)
+            if query.lstrip().upper().startswith(("SELECT", "WITH")):
+                con.sql(query).show(max_rows=50)
+            else:
+                # e.g. a temporary view that the next queries use
+                con.execute(query)
             print()
 
 
