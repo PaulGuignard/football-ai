@@ -1,0 +1,132 @@
+# Project log
+
+Notes on how the project is going: the questions I ask myself, what I tried,
+what I found and the decisions that came out of it. Newest entries at the bottom.
+
+## Why this project
+
+Goals and assists only reward the last touch. The pass that breaks a line
+three actions before a goal shows up nowhere in the usual stats. The question
+behind this project: **who really creates danger on a football pitch?**
+
+The idea is to give every on-ball action (pass, carry, dribble) a value: how
+much it changes the chances of scoring in the next few moments. Then to build
+an assistant that can answer questions about players using these values.
+
+The plan, step by step:
+
+1. **An expected goals (xG) model**: the probability that a shot ends up in
+   the net. It's the simplest version of the main question (how likely is a
+   goal from this situation?), and it lets me build the whole chain (data,
+   training, evaluation) on a smaller problem first.
+2. **Action values**: estimate the chances of scoring before and after each
+   action, the difference being the value of the action. A sequence model
+   (a small transformer) will read the last actions to judge the current one.
+3. **An AI agent**: a language model (LLM) that decides by itself which tool
+   to use to answer a question. Its tools: SQL queries on the database, the
+   models above (served through an API), and a RAG search over football texts
+   (event definitions, match reports...) so it can explain and quote its
+   sources instead of making things up.
+
+It's also my way of practising deep learning, generative AI (RAG, agents),
+SQL and MLOps on a real problem rather than on toy examples.
+
+---
+
+## Choosing the data (27/10)
+
+StatsBomb open data lists 80 competition-seasons, but a listed season is not
+necessarily a complete one. Counting matches and teams per season
+(`scripts/02_count_matchs.py`) showed two kinds of seasons:
+
+| Season | Matches | Teams | |
+|---|---|---|---|
+| Premier League, La Liga, Serie A 2015/16 | 380 | 20 | complete |
+| Ligue 1 2015/16 | 377 | 20 | 3 matches missing |
+| Bundesliga 2015/16 | 34 | 18 | partial |
+| La Liga 2020/21, Ligue 1 2022/23, Bundesliga 2023/24 | 32 to 35 | 18 to 20 | partial |
+
+The team count is misleading here: 34 matches with 18 teams is exactly one
+team's season (17 opponents, home and away). These partial seasons only
+follow one club, usually a strong one, so a model trained on them would learn
+how that club plays rather than how a league plays.
+
+**Decision:** train on the four complete 2015/16 seasons (1,517 matches).
+World Cups and Euros are complete too, but I keep them aside for now.
+
+## How the model will be evaluated (27/10, plan)
+
+- Main test set: club matches from 2015/16 that the model never sees during
+  training, split **by match** rather than by shot, so that shots from the
+  same game can't end up on both sides.
+- Possible second test on World Cups / Euros, to see if the model still works
+  on national teams. Its limit: it changes two things at once (clubs vs
+  national teams, 2015/16 vs 2018-2024), so a drop in performance couldn't be
+  attributed to one of them.
+
+## A first look at a match (27/10)
+
+One match (Chelsea 2-0 Arsenal, September 2015) is 3,732 events and 90
+columns. A few things worth knowing before going further:
+
+- Passes, ball receipts and carries make up about 3/4 of the events. There
+  were only 33 shots.
+- Some events are not actions at all (`Starting XI`, `Half Start`...): no
+  player, no location. They will have to be filtered out.
+- One of the two goals was an own goal, which is not a shot. Goals in a match
+  are not always shots.
+- Coordinates are given from the point of view of the team making the action
+  (always attacking towards x = 120). Comparing both teams in the same
+  sequence means flipping one of them: (x, y) becomes (120 - x, 80 - y).
+
+## Loading everything into DuckDB (28/10)
+
+About 5 million events is too much to keep comfortably in pandas on a laptop,
+so the four seasons go into a DuckDB database (a single file, no server).
+`scripts/04_load_events.py` downloads each match, cleans it and inserts it.
+
+- Only 39 of the ~90 columns are kept (see `sql/schema.sql`). What I kept:
+  the context needed to rebuild sequences of play (match, period, time,
+  possession, team, player, location) and the details of the actions the
+  project is about: passes, carries, dribbles and shots. What I left out:
+  details of duels, fouls, cards, substitutions and goalkeeper actions, which
+  don't say how dangerous an action is, plus tactics and shot freeze frames,
+  which are nested structures. Freeze frames (where every player stands when a
+  shot is taken) could improve the xG model later; adding a column only means
+  re-running the loading script.
+- Missing text has to become `NULL`, not the string `"nan"`.
+- StatsBomb only fills flags like `under_pressure` when they are true, so an
+  empty cell means `False`.
+- Matches already in the database are skipped, so the script can be stopped
+  and run again without duplicates. Each match is inserted in one go, so a
+  match is never half loaded.
+
+Full run: about 25 minutes, 1,517 matches, 5,321,459 events.
+
+## First SQL look at shots (29/10)
+
+From now on, queries live in `.sql` files under `sql/explore/` so they can be
+read directly on GitHub. `scripts/run_sql.py` runs a file and prints each
+result as a table, with the comment above the query as its title.
+
+`sql/explore/01_shots_overview.sql`
+
+- 37,888 shots, about 25 per match.
+- 3,869 goals: **10.2%** of shots end up in the net.
+- Other outcomes: off target 33%, blocked 25%, saved 23%, wayward 6%, post 2%.
+
+What it means for the xG model (step 1 of the plan):
+
+- The target is goal / no goal, and the classes are imbalanced (10% goals).
+  A model always answering "no goal" would be right 90% of the time and
+  still useless, so accuracy is not the right metric. I'll use log loss, the
+  Brier score and calibration instead.
+- First baseline: give every shot an xG of 0.10. Any real model has to do
+  clearly better than that.
+
+Open questions for the next step:
+
+- Penalties are counted as shots and they go in far more often. Should they
+  be part of the model?
+- Do the match scores match the goals from shots plus own goals?
+
