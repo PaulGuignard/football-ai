@@ -130,3 +130,34 @@ Open questions for the next step:
   be part of the model?
 - Do the match scores match the goals from shots plus own goals?
 
+## Shot types, body parts and a data check (29/10)
+
+`sql/explore/02_shot_types_and_scores.sql`
+
+| Shot type | Shots | Goals | Conversion |
+|---|---|---|---|
+| Open play | 35,732 | 3,453 | 9.7% |
+| Direct free kick | 1,749 | 113 | 6.5% |
+| Penalty | 400 | 300 | 75.0% |
+| Direct from a corner | 7 | 3 | 42.9% |
+
+- Penalties go in 3 times out of 4. It's always the same situation (11 m,
+  facing the keeper), so there's nothing for a model to learn from their
+  position, and they would blur what it learns from other shots. **Decision:**
+  penalties are left out of training and get a fixed xG of 0.75.
+- "Corner" here means a shot taken straight from the corner flag, not a shot
+  after a corner (those are open play, with `play_pattern = 'From Corner'`).
+  Only 7 of them: a model can't learn anything from 7 examples, so I leave
+  them out too. Free kicks stay: 1,749 shots is enough, and the shot type
+  will be one of the model's inputs.
+- That leaves 37,481 shots to train the xG model.
+
+Body parts, penalties excluded: right foot 9.4%, left foot 8.9%, **head
+10.7%**. I expected feet to do better. My guess: headers are almost always
+taken close to goal, while foot shots include lots of long-range attempts.
+If that's right, distance is a confounder (it drives both the body part used
+and the chance of scoring), and at equal distance headers should actually do
+worse. Next step: check it.
+
+Data check: for all 1,517 matches, goals from shots (3,869) plus own goals
+(128) add up exactly to the final scores.
