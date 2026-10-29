@@ -161,3 +161,45 @@ worse. Next step: check it.
 
 Data check: for all 1,517 matches, goals from shots (3,869) plus own goals
 (128) add up exactly to the final scores.
+
+## Distance, and why headers looked better than they are (29/10)
+
+`sql/explore/03_shot_distance.sql`
+
+Distance is measured from the shot to the centre of the goal, in StatsBomb
+units (roughly yards). Penalties and shots straight from a corner are left
+out, which leaves the 37,481 shots of the model (the seven distance bands
+add up to exactly that).
+
+| Distance (yards) | Shots | Conversion |
+|---|---|---|
+| 0-6 | 1,022 | 44.7% |
+| 6-12 | 7,624 | 17.7% |
+| 12-18 | 8,398 | 12.0% |
+| 18-24 | 8,220 | 5.5% |
+| 24-30 | 7,721 | 2.9% |
+| 30-36 | 3,569 | 1.6% |
+| 36+ | 927 | 1.7% |
+
+The chance of scoring drops very fast in the first yards, then flattens out
+around 2%. The relationship is clearly not a straight line, which matters
+for the model: a logistic regression on raw distance may struggle with it.
+
+Headers are taken from about 10 yards on average, foot shots from about
+21. And at the same distance, feet win every time:
+
+| Distance (yards) | Headers | Head conversion | Foot shots | Foot conversion |
+|---|---|---|---|---|
+| 0-6 | 498 | 32.7% | 494 | 56.1% |
+| 6-12 | 4,169 | 10.6% | 3,410 | 26.5% |
+| 12-18 | 1,392 | 3.5% | 6,997 | 13.7% |
+
+So the guess was right. Overall, headers score more often (10.7% vs about
+9%), but within every distance band they score 2 to 4 times less. Headers
+only looked better because they are taken much closer to goal. This is a
+textbook case of Simpson's paradox: a trend that holds in each group flips
+when the groups are pooled.
+
+**Takeaway for the model:** distance is the most important input, and body
+part has to be used together with it, never on its own. Looking at one
+variable at a time would have given the wrong conclusion.
