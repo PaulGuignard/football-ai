@@ -266,3 +266,26 @@ them one by one can't separate the effects, a model that sees them all at
 once can. That's the end of the exploration. Inputs for the first model:
 distance, angle, body part, shot type (open play / free kick), how the attack
 started, first time, one-on-one and under pressure.
+
+## A first picture: the shot map (30/10)
+
+`scripts/05_shot_map.py` → `docs/figures/shot_map.png`
+
+![Shot map](figures/shot_map.png)
+
+Same 37,481 shots as the model, on a grid of 4 × 4 yard zones. On the left,
+how many shots come from each zone. On the right, the share of those shots
+that end up as goals. Zones with fewer than 30 shots are left blank: a rate
+computed on a handful of shots would mostly be noise.
+
+What it shows:
+
+- Players shoot mostly from the middle, around the penalty spot and the edge
+  of the box. Very few shots come from wide or from very far out.
+- Goals come from a much smaller area: right in front of the goal, inside
+  the six-yard box, where the best zone reaches 61%. As soon as the shot moves
+  back or out wide, the rate drops fast. That's distance and angle again,
+  in one picture.
+- The busiest zone (around the penalty spot) is not the most dangerous one
+  (just in front of the goal). Putting a number on that difference for every
+  single shot is exactly what the xG model will do.
