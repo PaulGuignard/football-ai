@@ -10,15 +10,27 @@ three actions before a goal shows up nowhere in the usual stats. The question
 behind this project: **who really creates danger on a football pitch?**
 
 The idea is to give every on-ball action (pass, carry, dribble) a value: how
-much it changes the chances of scoring in the next few moments. Then to build
-an assistant that can answer questions about players using these values.
+much it changes the chances of scoring in the next few moments. Adding up
+those values per player gives a way to evaluate players beyond goals and
+assists, the way a scouting department would: who creates danger without it
+showing up in the usual stats? The same values can also be looked at by team,
+by zone or by type of action. Then an assistant can answer questions about
+players and teams using these values.
 
 The plan, step by step:
 
 1. **An expected goals (xG) model**: the probability that a shot ends up in
-   the net. It's the simplest version of the main question (how likely is a
-   goal from this situation?), and it lets me build the whole chain (data,
-   training, evaluation) on a smaller problem first.
+   the net. Why start there when the goal is to value every action:
+   - it's the simplest version of the main question (how likely is a goal
+     from this situation?), the shot being the last link of every attack;
+   - it's a building block for what follows: goals are rare (about 2.5 per
+     match out of ~3,500 events), so valuing actions from goals alone would
+     be very noisy, while xG says how dangerous each shot was even when it
+     missed;
+   - it lets me build the whole chain (features, training, evaluation, tests,
+     deployment) on 37,000 shots before moving to 5 million events;
+   - StatsBomb publishes its own xG, so there is a reference to check my
+     model against, which doesn't really exist for action values.
 2. **Action values**: estimate the chances of scoring before and after each
    action, the difference being the value of the action. A sequence model
    (a small transformer) will read the last actions to judge the current one.
@@ -30,6 +42,12 @@ The plan, step by step:
 
 It's also my way of practising deep learning, generative AI (RAG, agents),
 SQL and MLOps on a real problem rather than on toy examples.
+
+**About the data:** the free StatsBomb data used here is from 2015/16, so this
+is a demonstration of the method, not a scouting tool for today's players.
+The loading step is kept separate from everything else, so the same models
+could run on recent data: plug in another season of StatsBomb data, or write
+a new loader for another provider, then retrain.
 
 ---
 
@@ -289,3 +307,40 @@ What it shows:
 - The busiest zone (around the penalty spot) is not the most dangerous one
   (just in front of the goal). Putting a number on that difference for every
   single shot is exactly what the xG model will do.
+
+## How the xG model will be built (30/10, plan)
+
+**What kind of problem.** For every shot, the answer is known: goal or no
+goal. So this is supervised learning, and since the answer is a category
+(goal / no goal) and not a continuous number, it's a binary classification
+problem. What I want out of the model is not just yes or no but a
+probability: that probability *is* the xG.
+
+**The data the model learns from.** One row per shot (`shot_features`), with
+the inputs found during the exploration (distance, angle, header, free kick,
+first time, one-on-one, under pressure, how the attack started) and the
+answer, `is_goal` (1 or 0). StatsBomb's own xG stays in the table only to
+compare with: feeding it to the model would hand it another model's answer.
+
+**Which models, and in which order.**
+
+1. **Logistic regression** first. It's a classification model that outputs a
+   probability, it's the classic xG model, and it's easy to read: each input
+   gets one coefficient that tells its effect with everything else held
+   equal. That's how I'll check the exploration's guesses, like pressure
+   lowering the chances once distance is taken into account.
+2. **Gradient boosting** next. Tree-based models pick up curves and
+   interactions on their own (scoring chances don't fall in a straight line
+   with distance, and headers may lose value faster than foot shots). The
+   question is whether that extra flexibility actually helps.
+3. **A small neural network in PyTorch** on the same problem, mostly to work
+   on deep learning fundamentals (layers, loss, training loop) on a case I
+   already understand well.
+
+A more complex model only stays if the numbers say it's worth it.
+
+**How they'll be judged.** About 80% of the matches for training, 20% kept
+aside for testing, split by match. Metrics: log loss, Brier score, AUC, and a
+calibration curve (do shots given 20% really go in about 20% of the time?).
+Every model is compared to two references: 0.10 for every shot (a model that
+can't beat that is useless) and StatsBomb's xG (a professional model).
