@@ -134,6 +134,9 @@ Open questions for the next step:
 
 `sql/explore/02_shot_types_and_scores.sql`
 
+In all the tables below, **conversion** means the share of shots that end up
+as goals (goals ÷ shots).
+
 | Shot type | Shots | Goals | Conversion |
 |---|---|---|---|
 | Open play | 35,732 | 3,453 | 9.7% |
@@ -152,8 +155,8 @@ Open questions for the next step:
   will be one of the model's inputs.
 - That leaves 37,481 shots to train the xG model.
 
-Body parts, penalties excluded: right foot 9.4%, left foot 8.9%, **head
-10.7%**. I expected feet to do better. My guess: headers are almost always
+Conversion by body part, penalties excluded: right foot 9.4%, left foot 8.9%,
+**head 10.7%**. I expected feet to do better. My guess: headers are almost always
 taken close to goal, while foot shots include lots of long-range attempts.
 If that's right, distance is a confounder (it drives both the body part used
 and the chance of scoring), and at equal distance headers should actually do
@@ -194,8 +197,10 @@ Headers are taken from about 10 yards on average, foot shots from about
 | 6-12 | 4,169 | 10.6% | 3,410 | 26.5% |
 | 12-18 | 1,392 | 3.5% | 6,997 | 13.7% |
 
-So the guess was right. Overall, headers score more often (10.7% vs about
-9%), but within every distance band they score 2 to 4 times less. Headers
+So the guess was right. Overall, a header goes in more often than a foot shot
+(10.7% vs about 9%), but in each distance band up to 18 yards (there are
+almost no headers from further out), a header goes in 1.7 to 4 times less
+often than a foot shot. Headers
 only looked better because they are taken much closer to goal. This is a
 textbook case of Simpson's paradox: a trend that holds in each group flips
 when the groups are pooled.
@@ -203,3 +208,61 @@ when the groups are pooled.
 **Takeaway for the model:** distance is the most important input, and body
 part has to be used together with it, never on its own. Looking at one
 variable at a time would have given the wrong conclusion.
+
+## Angle and context of the shot (30/10)
+
+`sql/explore/04_shot_angle_and_context.sql`
+
+The angle is how much of the goal the shooter can see: the angle between the
+two lines going from the ball to each post. Facing the goal from close, it's
+wide. From the side or from far away, it's narrow.
+
+| Angle | Shots | Avg distance (yards) | Conversion |
+|---|---|---|---|
+| 0-10° | 976 | 30.7 | 3.6% |
+| 10-20° | 19,102 | 25.5 | 3.7% |
+| 20-30° | 8,013 | 16.4 | 11.1% |
+| 30-40° | 4,163 | 11.7 | 14.6% |
+| 40-50° | 2,463 | 9.1 | 18.1% |
+| 50-60° | 1,414 | 7.4 | 23.6% |
+| 60°+ | 1,350 | 5.2 | 41.0% |
+
+Wide angles score more, but they are also closer to goal, so this table alone
+proves nothing. Keeping only shots taken from 12 to 18 yards, the angle still
+makes a big difference: 2.5% under 10°, 8.1%, 13.0%, then 14.3% above 30°.
+**The angle carries information that distance doesn't**, so it goes into the
+model.
+
+Where the attack comes from:
+
+- Shots from counter-attacks go in **15.5%** of the time, against about 9-10%
+  for every other kind of attack, from the same average distance (19.4 yards
+  vs 20.4 for regular play). Careful, that's 15.5% of the *shots*, not of the
+  counter-attacks: most counters never end in a shot at all. Distance doesn't
+  explain it. My guess: the defence isn't set, so there are fewer players
+  between the shooter and the goal, something our data can't see yet (see
+  freeze frames).
+- Shots after a corner are taken closer (15.2 yards on average) but only
+  convert at 8.6%, so at equal distance they probably do worse: crowded box,
+  lots of headers.
+
+Three yes/no situations (conversion, with the average shot distance in
+brackets):
+
+| Situation | Yes | No |
+|---|---|---|
+| First-time shot | 12.8% (17.8 yd) | 8.0% (20.5 yd) |
+| One-on-one with the keeper | 25.2% (12.5 yd) | 8.7% (20.0 yd) |
+| Under pressure | 9.2% (16.3 yd) | 9.6% (20.8 yd) |
+
+The most interesting one is pressure. It barely changes the conversion rate,
+but pressured shots are taken 4.5 yards closer. Since closer shots normally
+score a lot more, pressure probably does lower the chances, and the distance
+hides it. First-time shots and one-on-ones are also taken closer, so part of
+their advantage is distance too.
+
+**Takeaway:** almost every variable is tangled up with distance. Looking at
+them one by one can't separate the effects, a model that sees them all at
+once can. That's the end of the exploration. Inputs for the first model:
+distance, angle, body part, shot type (open play / free kick), how the attack
+started, first time, one-on-one and under pressure.
