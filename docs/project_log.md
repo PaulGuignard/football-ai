@@ -371,3 +371,16 @@ already know. The four tests check that:
 To make sure the tests actually protect something, I broke the angle formula
 on purpose (moving a post by one yard): the geometry test failed, as it
 should. They run in under a second with `uv run pytest`.
+
+## Checks on every pull request (10/11)
+
+`.github/workflows/ci.yml`
+
+The tests and the linter (ruff) now run on GitHub at every pull request and
+every push to `main`, on a fresh machine that installs the exact versions
+pinned in `uv.lock`. Since the tests build their own tiny database, they
+don't need the real data, so the whole check takes about 10 seconds.
+
+From now on, each big step lives on its own branch and reaches `main`
+through a pull request, merged only once the checks are green. The first one
+(#1) brought in the features table, the tests and this workflow.
