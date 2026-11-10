@@ -344,3 +344,30 @@ aside for testing, split by match. Metrics: log loss, Brier score, AUC, and a
 calibration curve (do shots given 20% really go in about 20% of the time?).
 Every model is compared to two references: 0.10 for every shot (a model that
 can't beat that is useless) and StatsBomb's xG (a professional model).
+
+## One table for the model, and the first tests (10/11)
+
+`sql/features/shot_features.sql`, `src/football_ai/features.py`,
+`tests/test_features.py`
+
+During the exploration, distance and angle were recomputed in every SQL file.
+From now on they are computed in one place only: the `shot_features` table,
+one row per shot (37,481 rows) with the model inputs and the answer
+(`is_goal`). The training code, and later the demo and the API, will all read
+from it, so a shot can't get one distance during training and another one in
+production.
+
+The code that builds the table takes a database connection as a parameter.
+That's what makes it testable: the same function runs on the real database
+and on a tiny in-memory one filled with a few hand-made shots whose answer I
+already know. The four tests check that:
+
+- a shot from the penalty spot comes out at 12 yards, with an angle of
+  2 × atan(4/12) ≈ 36.9°;
+- penalties, shots straight from a corner and non-shot events are left out;
+- a goal gives 1, a save or a shot off the post gives 0;
+- headers and free kicks are flagged correctly.
+
+To make sure the tests actually protect something, I broke the angle formula
+on purpose (moving a post by one yard): the geometry test failed, as it
+should. They run in under a second with `uv run pytest`.
