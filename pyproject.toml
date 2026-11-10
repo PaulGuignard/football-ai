@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib>=3.10.9",
     "mplsoccer>=1.8.1",
     "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
     "statsbombpy>=1.22.0",
 ]
 
