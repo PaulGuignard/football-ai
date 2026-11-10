@@ -1,0 +1,27 @@
+# Lint and tests on every pull request, and on every push to main.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # uv reads .python-version and installs that Python by itself
+      - uses: astral-sh/setup-uv@v6
+
+      # --locked: fail if uv.lock no longer matches pyproject.toml
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      # The tests build their own small database, no data download needed
+      - name: Tests
+        run: uv run pytest
