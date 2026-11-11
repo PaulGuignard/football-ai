@@ -384,3 +384,68 @@ don't need the real data, so the whole check takes about 10 seconds.
 From now on, each big step lives on its own branch and reaches `main`
 through a pull request, merged only once the checks are green. The first one
 (#1) brought in the features table, the tests and this workflow.
+
+## First xG model: a logistic regression (11/11)
+
+`src/football_ai/xg.py`, `scripts/06_train_xg.py`, `scripts/07_evaluate_xg.py`,
+`scripts/08_explain_xg.py`
+
+**Setup.** 20% of the matches (304 matches, 7,425 shots) are kept aside for
+the test, split by match. The model is trained on the other 30,056 shots.
+Distance and angle are standardised, the yes/no inputs go in as 0/1 and the
+way the attack started is one-hot encoded, all inside one scikit-learn
+pipeline so that these settings are learnt from the training set only.
+
+**Results on the test matches**
+
+| | Log loss ↓ | Brier ↓ | AUC ↑ | Expected goals (716 real) |
+|---|---|---|---|---|
+| Baseline: 9.5% for every shot | 0.317 | 0.087 | 0.500 | 704 |
+| **Logistic regression** | **0.264** | **0.075** | **0.788** | **699** |
+| StatsBomb xG | 0.250 | 0.071 | 0.818 | 676 |
+
+I don't use accuracy: saying "no goal" every time is already 90% accurate.
+What matters for an xG is the quality of the probabilities (log loss, Brier),
+whether they can be trusted once added up (calibration) and whether
+dangerous shots rank above the others (AUC).
+
+With eight simple inputs, the model closes about 80% of the log loss gap
+between the baseline and StatsBomb's xG, and its probabilities are well
+calibrated: shots given about 10% go in about 10% of the time.
+
+![Calibration on the test matches](figures/xg_calibration.png)
+
+The remaining gap is expected: StatsBomb's model also knows where the keeper
+and the defenders stand when the shot is taken.
+
+**What the model learnt.** Each odds ratio is the effect of one input on the
+odds of scoring, everything else being equal, which is exactly what the
+exploration couldn't separate:
+
+| Input | Odds ratio | |
+|---|---|---|
+| Header | 0.30 | odds divided by about 3 |
+| Distance (+8.8 yards) | 0.39 | |
+| Angle (+15.5°) | 1.56 | |
+| One-on-one | 2.05 | odds doubled |
+| Under pressure | 0.82 | −18% |
+| First-time shot | 0.95 | almost no effect |
+| Counter-attack vs regular play | 1.29 vs 0.84 | about ×1.5 |
+| After a corner vs regular play | 0.46 vs 0.84 | about ×0.55 |
+| Direct free kick | 3.09 | odds tripled |
+
+- The exploration's guesses hold up: headers really are worse at equal
+  distance, and pressure does lower the chances (by about 18%) once
+  distance is accounted for. It was hidden in the raw numbers.
+- First-time shots looked better in the exploration, but almost all of it
+  was distance.
+- The surprise is the direct free kick. Overall, free kicks score less than
+  open-play shots (6.5% vs 9.7%), yet at the same distance they score 2 to
+  4 times more (from 24 to 30 yards: 6.4% vs 2.5%). Still ball, a specialist
+  taking it, nobody pressing: another case of Simpson's paradox, this time
+  found by the model. Part of that coefficient may also make up for the
+  model treating distance as a straight line, which it isn't.
+
+**Next:** a model that can follow the curve of distance and pick up
+interactions on its own (gradient boosting), then the keeper's and
+defenders' positions (freeze frames).
