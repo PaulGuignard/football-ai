@@ -1,8 +1,9 @@
 """Tests for the xG model code, on small made-up DataFrames."""
 
+import numpy as np
 import pandas as pd
 
-from football_ai.xg import split_by_match
+from football_ai.xg import build_logistic_model, predict_xg, split_by_match, train
 
 
 def make_shots(n_matches: int = 10, shots_per_match: int = 3) -> pd.DataFrame:
@@ -13,24 +14,42 @@ def make_shots(n_matches: int = 10, shots_per_match: int = 3) -> pd.DataFrame:
     })
 
 
-def test_no_match_ends_up_on_both_sides():
-    train, test = split_by_match(make_shots())
+def make_model_shots(n: int = 400, seed: int = 0) -> pd.DataFrame:
+    """Fake shots with every model input, where closer shots score more often."""
+    rng = np.random.default_rng(seed)
+    distance = rng.uniform(2, 40, n)
+    return pd.DataFrame({
+        "match_id": np.arange(n) // 4,
+        "distance": distance,
+        "angle": rng.uniform(5, 60, n),
+        "is_header": rng.random(n) < 0.2,
+        "is_free_kick": rng.random(n) < 0.05,
+        "is_first_time": rng.random(n) < 0.3,
+        "is_one_on_one": rng.random(n) < 0.05,
+        "is_under_pressure": rng.random(n) < 0.25,
+        "play_pattern": rng.choice(["Regular Play", "From Counter", "From Corner"], n),
+        "is_goal": (rng.random(n) < 0.6 * np.exp(-distance / 8)).astype(int),
+    })
 
-    assert set(train["match_id"]).isdisjoint(test["match_id"])
+
+def test_no_match_ends_up_on_both_sides():
+    train_set, test_set = split_by_match(make_shots())
+
+    assert set(train_set["match_id"]).isdisjoint(test_set["match_id"])
 
 
 def test_every_shot_is_kept_exactly_once():
     shots = make_shots()
-    train, test = split_by_match(shots)
+    train_set, test_set = split_by_match(shots)
 
-    assert len(train) + len(test) == len(shots)
-    assert sorted(train.index.tolist() + test.index.tolist()) == shots.index.tolist()
+    assert len(train_set) + len(test_set) == len(shots)
+    assert sorted(train_set.index.tolist() + test_set.index.tolist()) == shots.index.tolist()
 
 
 def test_about_20_percent_of_matches_go_to_test():
-    _, test = split_by_match(make_shots(n_matches=10))
+    _, test_set = split_by_match(make_shots(n_matches=10))
 
-    assert test["match_id"].nunique() == 2
+    assert test_set["match_id"].nunique() == 2
 
 
 def test_same_seed_gives_same_split():
@@ -39,3 +58,32 @@ def test_same_seed_gives_same_split():
     second_test = split_by_match(shots, seed=7)[1]
 
     assert first_test.index.tolist() == second_test.index.tolist()
+
+
+def test_xg_is_a_probability_for_every_shot():
+    shots = make_model_shots()
+    model = train(build_logistic_model(), shots)
+    xg = predict_xg(model, shots)
+
+    assert len(xg) == len(shots)
+    assert xg.between(0, 1).all()
+
+
+def test_model_learns_that_closer_shots_are_more_dangerous():
+    shots = make_model_shots()
+    model = train(build_logistic_model(), shots)
+
+    close, far = shots.iloc[[0]].copy(), shots.iloc[[0]].copy()
+    close["distance"], far["distance"] = 5.0, 35.0
+
+    assert predict_xg(model, close).iloc[0] > predict_xg(model, far).iloc[0]
+
+
+def test_unknown_play_pattern_does_not_break_predictions():
+    shots = make_model_shots()
+    model = train(build_logistic_model(), shots)
+
+    new_shot = shots.iloc[[0]].copy()
+    new_shot["play_pattern"] = "From Keeper"  # never seen in training
+
+    assert predict_xg(model, new_shot).between(0, 1).all()
