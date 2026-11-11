@@ -8,6 +8,7 @@ import pytest
 
 from football_ai.xg import (
     build_logistic_model,
+    coefficients,
     evaluate,
     predict_xg,
     split_by_match,
@@ -120,3 +121,19 @@ def test_expected_goals_is_the_sum_of_xg():
 
     assert scores["goals"] == 1
     assert scores["expected_goals"] == pytest.approx(0.9)
+
+
+def test_coefficients_have_one_row_per_input_and_readable_names():
+    shots = make_model_shots()
+    table = coefficients(train(build_logistic_model(), shots))
+
+    # 2 numbers + 5 flags + 3 play patterns in the fake data
+    assert len(table) == 10
+    assert {"distance", "is_header", "From Counter"} <= set(table["input"])
+
+
+def test_distance_lowers_the_odds_on_data_built_that_way():
+    shots = make_model_shots()
+    table = coefficients(train(build_logistic_model(), shots)).set_index("input")
+
+    assert table.loc["distance", "odds_ratio"] < 1
