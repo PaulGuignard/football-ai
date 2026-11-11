@@ -1,10 +1,12 @@
 """Expected goals (xG) model: from the shot_features table to a trained model.
 
 Loads the shots, splits them into a training set and a test set, builds the
-first model (a logistic regression) and scores its predictions.
+first model (a logistic regression), scores its predictions and shows what it
+learnt.
 """
 
 import duckdb
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
@@ -84,3 +86,22 @@ def evaluate(is_goal: pd.Series, xg: pd.Series) -> dict[str, float]:
         "goals": float(is_goal.sum()),
         "expected_goals": float(xg.sum()),
     }
+
+
+def coefficients(model: Pipeline) -> pd.DataFrame:
+    """What the logistic regression learnt: one row per model input.
+
+    odds_ratio = exp(coefficient): by how much the odds of scoring are
+    multiplied when the input goes up by one (one standard deviation for
+    distance and angle, "yes" instead of "no" for the flags), everything else
+    being equal. Above 1 helps, below 1 hurts.
+    """
+    names = model.named_steps["preparation"].get_feature_names_out()
+    coefs = model.named_steps["model"].coef_[0]
+    table = pd.DataFrame({"input": names, "coefficient": coefs})
+    # "numeric__distance" -> "distance", "categorical__play_pattern_From Counter" -> "From Counter"
+    table["input"] = (
+        table["input"].str.split("__").str[1].str.replace("play_pattern_", "", regex=False)
+    )
+    table["odds_ratio"] = np.exp(table["coefficient"])
+    return table.sort_values("coefficient").reset_index(drop=True)
