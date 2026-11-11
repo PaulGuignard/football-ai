@@ -1,9 +1,18 @@
 """Tests for the xG model code, on small made-up DataFrames."""
 
+import math
+
 import numpy as np
 import pandas as pd
+import pytest
 
-from football_ai.xg import build_logistic_model, predict_xg, split_by_match, train
+from football_ai.xg import (
+    build_logistic_model,
+    evaluate,
+    predict_xg,
+    split_by_match,
+    train,
+)
 
 
 def make_shots(n_matches: int = 10, shots_per_match: int = 3) -> pd.DataFrame:
@@ -87,3 +96,27 @@ def test_unknown_play_pattern_does_not_break_predictions():
     new_shot["play_pattern"] = "From Keeper"  # never seen in training
 
     assert predict_xg(model, new_shot).between(0, 1).all()
+
+
+def test_perfect_predictions_get_perfect_scores():
+    is_goal = pd.Series([0, 1, 0, 1])
+    scores = evaluate(is_goal, is_goal.astype(float))
+
+    assert scores["brier"] == 0
+    assert scores["auc"] == 1
+
+
+def test_saying_50_percent_everywhere_gives_the_textbook_log_loss():
+    is_goal = pd.Series([0, 1, 0, 1])
+    scores = evaluate(is_goal, pd.Series([0.5] * 4))
+
+    # -ln(0.5), the log loss of a coin toss
+    assert scores["log_loss"] == pytest.approx(math.log(2))
+    assert scores["auc"] == 0.5
+
+
+def test_expected_goals_is_the_sum_of_xg():
+    scores = evaluate(pd.Series([0, 1, 0]), pd.Series([0.1, 0.6, 0.2]))
+
+    assert scores["goals"] == 1
+    assert scores["expected_goals"] == pytest.approx(0.9)
