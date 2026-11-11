@@ -1,13 +1,14 @@
 """Expected goals (xG) model: from the shot_features table to a trained model.
 
-Loads the shots, splits them into a training set and a test set, and builds
-the first model: a logistic regression.
+Loads the shots, splits them into a training set and a test set, builds the
+first model (a logistic regression) and scores its predictions.
 """
 
 import duckdb
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -68,3 +69,18 @@ def predict_xg(model: Pipeline, shots: pd.DataFrame) -> pd.Series:
     """The probability of a goal for each shot, i.e. its xG."""
     probabilities = model.predict_proba(shots[FEATURES])[:, 1]
     return pd.Series(probabilities, index=shots.index, name="xg")
+
+
+def evaluate(is_goal: pd.Series, xg: pd.Series) -> dict[str, float]:
+    """Score xG predictions against what really happened.
+
+    log_loss and brier: lower is better. auc: 0.5 is a coin toss, 1 is
+    perfect ranking. expected_goals should be close to goals.
+    """
+    return {
+        "log_loss": log_loss(is_goal, xg, labels=[0, 1]),
+        "brier": brier_score_loss(is_goal, xg),
+        "auc": roc_auc_score(is_goal, xg),
+        "goals": float(is_goal.sum()),
+        "expected_goals": float(xg.sum()),
+    }
