@@ -1,14 +1,15 @@
 """Expected goals (xG) model: from the shot_features table to a trained model.
 
 Loads the shots, splits them into a training set and a test set, builds the
-first model (a logistic regression), scores its predictions and shows what it
-learnt.
+models (a logistic regression, then gradient boosting), scores their
+predictions and shows what the logistic regression learnt.
 """
 
 import duckdb
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import GroupShuffleSplit
@@ -59,6 +60,28 @@ def build_logistic_model() -> Pipeline:
     return Pipeline([
         ("preparation", preparation),
         ("model", LogisticRegression(max_iter=1000)),
+    ])
+
+
+def build_boosting_model(seed: int = 42) -> Pipeline:
+    """Gradient boosting: many small trees, each one fixing what the others got wrong.
+
+    Kept on scikit-learn's default settings for a first, fair comparison with
+    the logistic regression. Early stopping is on by default above 10,000
+    shots: 10% of the training shots are held back and trees stop being added
+    once they no longer help there. The seed fixes which shots those are.
+    """
+    preparation = ColumnTransformer([
+        # Trees only ask "is distance below 9?", so the scale doesn't matter
+        ("numeric", "passthrough", NUMERIC_FEATURES),
+        ("flags", "passthrough", FLAG_FEATURES),
+        # Dense output: this model doesn't accept sparse matrices
+        ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+         CATEGORICAL_FEATURES),
+    ])
+    return Pipeline([
+        ("preparation", preparation),
+        ("model", HistGradientBoostingClassifier(random_state=seed)),
     ])
 
 

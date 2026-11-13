@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from football_ai.xg import (
+    build_boosting_model,
     build_logistic_model,
     coefficients,
     evaluate,
@@ -14,6 +15,9 @@ from football_ai.xg import (
     split_by_match,
     train,
 )
+
+# Every model must pass the same basic checks
+MODEL_BUILDERS = [build_logistic_model, build_boosting_model]
 
 
 def make_shots(n_matches: int = 10, shots_per_match: int = 3) -> pd.DataFrame:
@@ -70,18 +74,20 @@ def test_same_seed_gives_same_split():
     assert first_test.index.tolist() == second_test.index.tolist()
 
 
-def test_xg_is_a_probability_for_every_shot():
+@pytest.mark.parametrize("build_model", MODEL_BUILDERS)
+def test_xg_is_a_probability_for_every_shot(build_model):
     shots = make_model_shots()
-    model = train(build_logistic_model(), shots)
+    model = train(build_model(), shots)
     xg = predict_xg(model, shots)
 
     assert len(xg) == len(shots)
     assert xg.between(0, 1).all()
 
 
-def test_model_learns_that_closer_shots_are_more_dangerous():
+@pytest.mark.parametrize("build_model", MODEL_BUILDERS)
+def test_model_learns_that_closer_shots_are_more_dangerous(build_model):
     shots = make_model_shots()
-    model = train(build_logistic_model(), shots)
+    model = train(build_model(), shots)
 
     close, far = shots.iloc[[0]].copy(), shots.iloc[[0]].copy()
     close["distance"], far["distance"] = 5.0, 35.0
@@ -89,14 +95,23 @@ def test_model_learns_that_closer_shots_are_more_dangerous():
     assert predict_xg(model, close).iloc[0] > predict_xg(model, far).iloc[0]
 
 
-def test_unknown_play_pattern_does_not_break_predictions():
+@pytest.mark.parametrize("build_model", MODEL_BUILDERS)
+def test_unknown_play_pattern_does_not_break_predictions(build_model):
     shots = make_model_shots()
-    model = train(build_logistic_model(), shots)
+    model = train(build_model(), shots)
 
     new_shot = shots.iloc[[0]].copy()
     new_shot["play_pattern"] = "From Keeper"  # never seen in training
 
     assert predict_xg(model, new_shot).between(0, 1).all()
+
+
+def test_boosting_gives_the_same_xg_when_trained_twice():
+    shots = make_model_shots()
+    first = predict_xg(train(build_boosting_model(), shots), shots)
+    second = predict_xg(train(build_boosting_model(), shots), shots)
+
+    assert first.equals(second)
 
 
 def test_perfect_predictions_get_perfect_scores():
