@@ -10,3 +10,7 @@ wheels/
 .venv
 data/
 .env
+
+#MLflow results, rebuilt by re-running the scripts
+mlflow.db
+mlruns/
