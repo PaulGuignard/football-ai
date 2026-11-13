@@ -1,14 +1,17 @@
 """Experiment tracking with MLflow: every training run leaves a trace.
 
-Each run records what was chosen (model, settings, inputs), how it scored on
-the test matches, and the trained model itself, so any result can be found
-and compared later in the MLflow UI.
+Each run records what was chosen (model, settings, inputs), how it scored,
+and for test runs the trained model itself, so any result can be found and
+compared later in the MLflow UI. Two kinds of runs: test runs (a trained
+model scored once on the test matches) and cross-validation runs (a setting
+scored on folds of the training matches, to choose between settings).
 """
 
 from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.pipeline import Pipeline
@@ -55,6 +58,7 @@ def log_xg_run(
     scores = evaluate(test_set["is_goal"], predict_xg(model, test_set))
 
     with mlflow.start_run(run_name=run_name):
+        mlflow.set_tag("stage", "test")
         estimator = model.named_steps["model"]
         mlflow.log_params({
             "model": type(estimator).__name__,
@@ -75,3 +79,31 @@ def log_xg_run(
         mlflow.sklearn.log_model(model, name="model", skops_trusted_types=TRUSTED_TYPES)
 
     return scores
+
+
+def log_cv_run(
+    run_name: str,
+    settings: dict,
+    fold_losses: np.ndarray,
+    default_losses: np.ndarray | None = None,
+    feature_set: str = "v1",
+) -> None:
+    """Record one setting's cross-validation scores as an MLflow run.
+
+    Keeps the mean and spread of the fold log losses, and each fold's own
+    score. If the default setting's fold scores are given, also counts on how
+    many folds this setting did better: the folds are the same for every
+    setting, so this fold-by-fold count is a fairer test than comparing means.
+    """
+    with mlflow.start_run(run_name=run_name):
+        mlflow.set_tag("stage", "cross-validation")
+        mlflow.log_params({**settings, "feature_set": feature_set, "n_folds": len(fold_losses)})
+        mlflow.log_metrics({
+            "cv_log_loss": float(fold_losses.mean()),
+            "cv_log_loss_std": float(fold_losses.std()),
+        })
+        for fold, loss in enumerate(fold_losses):
+            # One metric, one value per fold: MLflow draws it as a small curve
+            mlflow.log_metric("fold_log_loss", float(loss), step=fold)
+        if default_losses is not None:
+            mlflow.log_metric("folds_beating_default", int((fold_losses < default_losses).sum()))
