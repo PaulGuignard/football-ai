@@ -449,3 +449,52 @@ exploration couldn't separate:
 **Next:** a model that can follow the curve of distance and pick up
 interactions on its own (gradient boosting), then the keeper's and
 defenders' positions (freeze frames).
+
+## Gradient boosting: no better, and why that's useful (13/11)
+
+`src/football_ai/xg.py`, `scripts/07_evaluate_xg.py`
+
+**Setup.** Same training matches, same 304 test matches, same metrics: the
+only thing that changes is the model. scikit-learn's
+`HistGradientBoostingClassifier` on its default settings, for a fair first
+comparison. Distance and angle go in as they are (a tree only asks "is the
+distance below 9 yards?", so the scale doesn't matter). Early stopping holds
+back 10% of the training shots and stops adding trees once they no longer
+help there; it stopped after 45 trees out of the 100 allowed.
+
+**Results on the test matches**
+
+| | Log loss ↓ | Brier ↓ | AUC ↑ | Expected goals (716 real) |
+|---|---|---|---|---|
+| Baseline: 9.5% for every shot | 0.317 | 0.087 | 0.500 | 704 |
+| Logistic regression | 0.2635 | 0.0745 | 0.788 | 699 |
+| **Gradient boosting** | **0.2633** | **0.0749** | **0.791** | **689** |
+| StatsBomb xG | 0.2504 | 0.0709 | 0.818 | 676 |
+
+The gain is 0.0002 of log loss, about 1.5% of the gap to StatsBomb. AUC goes
+up a little (0.788 to 0.791), the Brier score goes down a little the wrong
+way, and both models are equally well calibrated (the calibration
+figure in the previous entry now shows both). In practice, the two are
+the same.
+
+**What it means.** Gradient boosting can follow any curve and find
+combinations on its own (header *and* far out), and it still finds almost
+nothing that the logistic regression had missed. So the model isn't what
+holds the xG back: with these eight inputs, there is not much more to learn.
+The early stop after 45 trees says the same thing. To get closer to
+StatsBomb, the model needs to know more about the shot (where the keeper
+and the defenders are), not to be more complex.
+
+**Change of plan.** A small neural network on the same eight inputs was
+planned next. It would see nothing more than the boosting did, so it is
+dropped. Deep learning moves to where it has something to bring:
+
+1. **Experiment tracking with MLflow**, so that every model and setting
+   from now on is logged and comparable.
+2. **xG with player positions** (StatsBomb freeze frames), compared two ways:
+   inputs I build by hand (keeper's position, defenders between the ball and
+   the goal...) fed to gradient boosting, against the raw positions of every
+   visible player fed to a neural network in PyTorch, which has to work out
+   on its own what matters.
+3. Then the xG is done, and the project moves on to its real goal: valuing
+   every action.
