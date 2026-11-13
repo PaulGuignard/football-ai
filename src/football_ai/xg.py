@@ -2,8 +2,11 @@
 
 Loads the shots, splits them into a training set and a test set, builds the
 models (a logistic regression, then gradient boosting), scores their
-predictions and shows what the logistic regression learnt.
+predictions, cross-validates settings and shows what the logistic regression
+learnt.
 """
+
+from collections.abc import Callable
 
 import duckdb
 import numpy as np
@@ -12,7 +15,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -63,13 +66,14 @@ def build_logistic_model() -> Pipeline:
     ])
 
 
-def build_boosting_model(seed: int = 42) -> Pipeline:
+def build_boosting_model(seed: int = 42, **settings) -> Pipeline:
     """Gradient boosting: many small trees, each one fixing what the others got wrong.
 
-    Kept on scikit-learn's default settings for a first, fair comparison with
-    the logistic regression. Early stopping is on by default above 10,000
-    shots: 10% of the training shots are held back and trees stop being added
-    once they no longer help there. The seed fixes which shots those are.
+    Without settings, scikit-learn's defaults. Any setting of the model can be
+    passed by name, e.g. build_boosting_model(learning_rate=0.05). Early
+    stopping is on by default above 10,000 shots: 10% of the training shots
+    are held back and trees stop being added once they no longer help there.
+    The seed fixes which shots those are.
     """
     preparation = ColumnTransformer([
         # Trees only ask "is distance below 9?", so the scale doesn't matter
@@ -81,7 +85,7 @@ def build_boosting_model(seed: int = 42) -> Pipeline:
     ])
     return Pipeline([
         ("preparation", preparation),
-        ("model", HistGradientBoostingClassifier(random_state=seed)),
+        ("model", HistGradientBoostingClassifier(random_state=seed, **settings)),
     ])
 
 
@@ -109,6 +113,26 @@ def evaluate(is_goal: pd.Series, xg: pd.Series) -> dict[str, float]:
         "goals": float(is_goal.sum()),
         "expected_goals": float(xg.sum()),
     }
+
+
+def cross_validate_by_match(
+    build_model: Callable[[], Pipeline], shots: pd.DataFrame, n_splits: int = 5
+) -> np.ndarray:
+    """Log loss of a model on each of n_splits folds of whole matches.
+
+    The matches are put into n_splits groups. Each group in turn is held out:
+    the model learns on the others and is scored on it. Meant for the training
+    set only, so that settings are chosen without ever looking at the test set.
+    The folds don't depend on chance, so every setting is scored on exactly
+    the same ones and can be compared fold by fold.
+    """
+    losses = []
+    folds = GroupKFold(n_splits=n_splits).split(shots, groups=shots["match_id"])
+    for learn_idx, check_idx in folds:
+        learn, check = shots.iloc[learn_idx], shots.iloc[check_idx]
+        model = train(build_model(), learn)
+        losses.append(log_loss(check[TARGET], predict_xg(model, check), labels=[0, 1]))
+    return np.array(losses)
 
 
 def coefficients(model: Pipeline) -> pd.DataFrame:
