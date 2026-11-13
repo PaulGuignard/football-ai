@@ -1,5 +1,7 @@
-"""Evaluate the first xG model against two references, and draw its calibration.
+"""Compare our two xG models with two references, and draw their calibration.
 
+Models: a logistic regression and gradient boosting, trained on the same
+matches and scored on the same test matches.
 References: a model that gives every shot the average goal rate of the
 training set (it knows nothing about the shot), and StatsBomb's own xG (a
 professional model that also sees where the keeper and defenders stand).
@@ -18,6 +20,7 @@ import pandas as pd
 from sklearn.calibration import calibration_curve
 
 from football_ai.xg import (
+    build_boosting_model,
     build_logistic_model,
     evaluate,
     load_shots,
@@ -39,7 +42,8 @@ def draw_calibration(test_set: pd.DataFrame) -> None:
     ax.plot([0, 1], [0, 1], linestyle="--", color="#8a8a86", linewidth=1)
 
     for column, label, color in [
-        ("xg", "Our model (logistic regression)", "#2a78d6"),
+        ("logistic_xg", "Logistic regression", "#2a78d6"),
+        ("boosting_xg", "Gradient boosting", "#1f9e74"),
         ("statsbomb_xg", "StatsBomb xG", "#eb6834"),
     ]:
         # 10 groups with the same number of shots in each
@@ -68,19 +72,25 @@ def main() -> None:
         shots = load_shots(con)
 
     train_set, test_set = split_by_match(shots)
-    model = train(build_logistic_model(), train_set)
+    logistic = train(build_logistic_model(), train_set)
+    boosting = train(build_boosting_model(), train_set)
     test_set = test_set.assign(
-        xg=predict_xg(model, test_set),
+        logistic_xg=predict_xg(logistic, test_set),
+        boosting_xg=predict_xg(boosting, test_set),
         # Knows nothing about the shot: same value for everyone
         baseline=train_set["is_goal"].mean(),
     )
 
     scores = pd.DataFrame({
         "baseline (average rate)": evaluate(test_set["is_goal"], test_set["baseline"]),
-        "our model": evaluate(test_set["is_goal"], test_set["xg"]),
+        "logistic regression": evaluate(test_set["is_goal"], test_set["logistic_xg"]),
+        "gradient boosting": evaluate(test_set["is_goal"], test_set["boosting_xg"]),
         "StatsBomb xG": evaluate(test_set["is_goal"], test_set["statsbomb_xg"]),
     }).T
     print(f"Test set: {len(test_set):,} shots from {test_set['match_id'].nunique()} matches")
+    # Early stopping decides this, not us
+    print(f"Gradient boosting stopped after {boosting.named_steps['model'].n_iter_} trees")
+    print()
     print(scores.round(4).to_string())
     print()
     draw_calibration(test_set)
