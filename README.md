@@ -8,7 +8,8 @@ reward the last touch. This project gives a value to every on-ball action
 scoring, then uses those values to evaluate players beyond the usual stats.
 
 **Status:** work in progress. The data pipeline, the exploration and two
-expected goals (xG) models are done; the players' positions are next.
+expected goals (xG) models are done, with experiments tracked in MLflow;
+the players' positions are next.
 
 ![Where shots are taken and how often they score](docs/figures/shot_map.png)
 
@@ -37,7 +38,8 @@ how often each zone scores. Goals come from a much smaller area than shots.*
   |---|---|---|
   | Naive baseline (same xG for every shot) | 0.317 | 0.500 |
   | Logistic regression | 0.264 | 0.788 |
-  | Gradient boosting | 0.263 | 0.791 |
+  | Gradient boosting, default settings | 0.263 | 0.791 |
+  | **Gradient boosting, tuned** | **0.261** | **0.796** |
   | StatsBomb xG (professional model) | 0.250 | 0.818 |
 
   The logistic regression closes about 80% of the gap between the baseline
@@ -45,8 +47,12 @@ how often each zone scores. Goals come from a much smaller area than shots.*
   what the exploration suggested (pressure lowers the chances once distance
   is accounted for) and show one surprise: at the same distance, direct free
   kicks score 2 to 4 times more than open-play shots.
-  Gradient boosting, which can find curves and combinations on its own,
-  does no better: with these inputs the limit is the data, not the model.
+  Gradient boosting, tuned by cross-validation on whole matches, does
+  better on almost every fold, but by too little to matter (about 0.001 of
+  log loss): with these inputs, the limit is the data, not the model.
+- **Experiment tracking with MLflow**: every run keeps its settings, scores
+  and trained model; settings are chosen by cross-validation, the test set
+  is used once.
 
 Every step, decision and result is written up in the
 [project log](docs/project_log.md).
@@ -55,7 +61,8 @@ Every step, decision and result is written up in the
 
 1. ~~**Expected goals (xG) model**, the probability that a shot becomes a
    goal: logistic regression, then gradient boosting.~~ Done.
-2. **Experiment tracking** with MLflow.
+2. ~~**Experiment tracking** with MLflow, and tuning by cross-validation.~~
+   Done.
 3. **xG with the players' positions** (keeper and defenders at the moment of
    the shot): hand-built inputs with gradient boosting, against the raw
    positions with a neural network in PyTorch.
@@ -68,14 +75,14 @@ Every step, decision and result is written up in the
 
 ## Stack
 
-Python, SQL (DuckDB), pandas, scikit-learn, matplotlib / mplsoccer, pytest,
+Python, SQL (DuckDB), pandas, scikit-learn, MLflow, matplotlib / mplsoccer, pytest,
 GitHub Actions, uv, Git.
-Coming next: PyTorch, MLflow, FastAPI, Docker, an LLM agent with RAG.
+Coming next: PyTorch, FastAPI, Docker, an LLM agent with RAG.
 
 ## Project structure
 
 ```
-src/football_ai/    reusable code: features table, xG models
+src/football_ai/    reusable code: features table, xG models, MLflow tracking
 tests/              pytest tests, run on every pull request
 scripts/            data loading, exploration, training and evaluation
 sql/schema.sql      database schema
@@ -93,6 +100,8 @@ uv sync                                     # install the environment
 uv run python scripts/04_load_events.py     # load the data (~25 min)
 uv run python -m football_ai.features       # build the features table
 uv run python scripts/07_evaluate_xg.py     # train and compare the xG models
+uv run python scripts/10_tune_boosting.py   # tune the boosting, log runs in MLflow
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # browse the runs
 uv run pytest                               # run the tests
 ```
 
