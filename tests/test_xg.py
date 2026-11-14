@@ -10,6 +10,7 @@ from football_ai.xg import (
     build_boosting_model,
     build_logistic_model,
     coefficients,
+    cross_validate_by_match,
     evaluate,
     predict_xg,
     split_by_match,
@@ -112,6 +113,28 @@ def test_boosting_gives_the_same_xg_when_trained_twice():
     second = predict_xg(train(build_boosting_model(), shots), shots)
 
     assert first.equals(second)
+
+
+def test_boosting_settings_reach_the_model():
+    model = build_boosting_model(learning_rate=0.05, max_leaf_nodes=7)
+
+    assert model.named_steps["model"].learning_rate == 0.05
+    assert model.named_steps["model"].max_leaf_nodes == 7
+
+
+def test_cross_validation_gives_one_log_loss_per_fold():
+    losses = cross_validate_by_match(build_logistic_model, make_model_shots(), n_splits=5)
+
+    assert len(losses) == 5
+    assert (losses > 0).all()
+
+
+def test_cross_validation_folds_are_the_same_every_time():
+    shots = make_model_shots()
+    first = cross_validate_by_match(build_logistic_model, shots)
+    second = cross_validate_by_match(build_logistic_model, shots)
+
+    assert (first == second).all()
 
 
 def test_perfect_predictions_get_perfect_scores():

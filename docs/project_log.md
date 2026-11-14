@@ -498,3 +498,80 @@ dropped. Deep learning moves to where it has something to bring:
    on its own what matters.
 3. Then the xG is done, and the project moves on to its real goal: valuing
    every action.
+
+## Tracking runs with MLflow, and tuning the boosting properly (14/11)
+
+`src/football_ai/tracking.py`, `scripts/09_track_xg.py`,
+`scripts/10_tune_boosting.py`
+
+**MLflow.** Until now, scores were printed and then lost. Every training is
+now an MLflow run: the settings (all of them, defaults included), the scores
+and the trained model itself, so it can be reloaded later by the API.
+Cross-validation runs and test runs are tagged apart. The tracking database
+and saved models stay out of Git: they are results, rebuilt by re-running
+the scripts. MLflow is open source and runs locally.
+
+**Choosing settings without touching the test set.** Trying 20 settings and
+keeping the best score on the test matches would flatter that score: some
+settings get lucky on those 304 matches. So the settings are chosen by
+5-fold cross-validation on the training matches only, folds made of whole
+matches (`GroupKFold`). The test set is used once, at the end, for the
+chosen setting.
+
+Every setting is scored on the same five folds, and so is the logistic
+regression. That makes a fold-by-fold comparison possible: a setting that
+does better on 5 folds out of 5 is not just lucky. The spread across folds
+(about 0.007) is larger than the gaps between settings, but it mostly says
+that some groups of matches are harder to predict than others, for every
+model at once.
+
+**Grid.** Learning rate (0.05, 0.1) × leaves per tree (2, 4, 7, 15, 31) ×
+minimum shots per leaf (20, 100): 20 settings, 100 trainings.
+
+**Results.** Mean log loss over the five folds:
+
+| | Cross-validated log loss | Folds where it beats the logistic regression |
+|---|---|---|
+| Logistic regression | 0.2620 | — |
+| Boosting, default settings (31 leaves) | 0.2637 | 1 of 5 |
+| Boosting, best setting (4 leaves) | 0.2609 | 4 of 5 |
+
+- **Tree size is what matters.** Every setting with 4, 7 or 15 leaves beats
+  the default on all five folds. With 31 leaves, the trees learn noise: the
+  default boosting is even a little worse than the logistic regression here.
+- 4 leaves is a real optimum, not the edge of the grid: 2 leaves does worse.
+- For trees of 4, 7 or 15 leaves, learning rate and minimum leaf size barely
+  move the score (differences of 0.0003 at most).
+- With 4 leaves, the boosting beats the logistic regression on 4 or 5 folds
+  out of 5, for each of the four settings of that size. So the gain is
+  real, in the sense that it is not luck, but it is tiny: about 0.001 of
+  log loss.
+
+**On the test matches** (used once, for the chosen setting: learning rate
+0.05, 4 leaves, 20 shots minimum per leaf):
+
+| | Log loss ↓ | Brier ↓ | AUC ↑ | Expected goals (716 real) |
+|---|---|---|---|---|
+| Logistic regression | 0.2635 | 0.0745 | 0.788 | 699 |
+| Boosting, default | 0.2633 | 0.0749 | 0.791 | 689 |
+| **Boosting, tuned** | **0.2612** | **0.0743** | **0.796** | 691 |
+| StatsBomb xG | 0.2504 | 0.0709 | 0.818 | 676 |
+
+The test confirms the direction. Its gap with the logistic regression
+(0.0023) is larger than the cross-validated one (0.001); with a single test
+set, the cross-validated figure is the safer estimate. The tuned boosting
+also underestimates the total a little more (691 expected goals for 716).
+
+**What it changes.** The previous entry said gradient boosting brought
+nothing. That was true of its default settings, which overfit. Tuned, it
+does better, consistently, but by too little to matter in practice: real is
+not the same as useful, and the two models give almost the same xG. The
+main conclusion stands, and is even stronger: tuning the model barely moves
+the score, all of our models remain far from StatsBomb (0.250), so the next
+step is to give them more information, the positions of the keeper and the
+defenders.
+
+A lesson for the next comparisons: I first compared the tuned boosting with
+the logistic regression on the test set only, and read too much into the
+gap. Two models are now always compared with the same method, on the same
+folds.
