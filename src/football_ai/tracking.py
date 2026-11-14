@@ -85,15 +85,16 @@ def log_cv_run(
     run_name: str,
     settings: dict,
     fold_losses: np.ndarray,
-    default_losses: np.ndarray | None = None,
+    references: dict[str, np.ndarray] | None = None,
     feature_set: str = "v1",
 ) -> None:
     """Record one setting's cross-validation scores as an MLflow run.
 
     Keeps the mean and spread of the fold log losses, and each fold's own
-    score. If the default setting's fold scores are given, also counts on how
-    many folds this setting did better: the folds are the same for every
-    setting, so this fold-by-fold count is a fairer test than comparing means.
+    score. references maps a name to another model's fold scores (e.g.
+    {"logistic": ...}): for each one, counts on how many folds this setting
+    did better. The folds are the same for every model, so this fold-by-fold
+    count is a fairer test than comparing means.
     """
     with mlflow.start_run(run_name=run_name):
         mlflow.set_tag("stage", "cross-validation")
@@ -105,5 +106,5 @@ def log_cv_run(
         for fold, loss in enumerate(fold_losses):
             # One metric, one value per fold: MLflow draws it as a small curve
             mlflow.log_metric("fold_log_loss", float(loss), step=fold)
-        if default_losses is not None:
-            mlflow.log_metric("folds_beating_default", int((fold_losses < default_losses).sum()))
+        for name, reference in (references or {}).items():
+            mlflow.log_metric(f"folds_beating_{name}", int((fold_losses < reference).sum()))

@@ -41,7 +41,7 @@ def test_a_run_keeps_settings_scores_and_model(experiment):
 def test_a_cv_run_keeps_the_setting_and_every_fold(experiment):
     losses = np.array([0.25, 0.27, 0.26])
     default = np.array([0.26, 0.26, 0.27])
-    log_cv_run("cv small trees", {"max_leaf_nodes": 7}, losses, default)
+    log_cv_run("cv small trees", {"max_leaf_nodes": 7}, losses, {"default": default})
 
     run = mlflow.search_runs(experiment_names=["test"]).iloc[0]
     assert run["tags.stage"] == "cross-validation"
