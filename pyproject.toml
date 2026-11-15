@@ -15,6 +15,7 @@ dependencies = [
     "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
     "statsbombpy>=1.22.0",
+    "torch>=2.9",
 ]
 
 [project.scripts]
@@ -29,3 +30,15 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.2",
 ]
+
+# PyTorch's CPU build: no graphics card needed, and far lighter than the
+# default Linux build, which ships the NVIDIA libraries
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+# explicit = true: this index is only used for torch, everything else still
+# comes from PyPI
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
