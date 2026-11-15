@@ -1,5 +1,6 @@
 -- Only the columns we need for xG and action values (39 out of ~90).
--- Skipped for now: shot freeze frames, tactics, goalkeeper details.
+-- Shot freeze frames get their own table at the end. Still skipped: tactics
+-- and goalkeeper details.
 
 CREATE TABLE IF NOT EXISTS matches (
     match_id     INTEGER PRIMARY KEY,
@@ -59,4 +60,22 @@ CREATE TABLE IF NOT EXISTS events (
     shot_one_on_one   BOOLEAN,
     shot_statsbomb_xg DOUBLE,    -- StatsBomb's own xG, used as a benchmark
     shot_key_pass_id  VARCHAR    -- event_id of the pass that led to the shot
+);
+
+-- Where every visible player stands when a shot is taken, one row per player
+-- and per shot. Loaded by scripts/11_load_freeze_frames.py. The shooter is
+-- not in it, and neither are players the camera didn't show
+CREATE TABLE IF NOT EXISTS shot_freeze_frames (
+    shot_id   VARCHAR,   -- event_id of the shot in `events`
+    match_id  INTEGER,
+    player    VARCHAR,
+    position  VARCHAR,   -- 'Goalkeeper' is how we find the keeper
+    teammate  BOOLEAN,   -- same team as the shooter
+    x         DOUBLE,    -- same frame as the shot, attacking towards x = 120
+    y         DOUBLE
+);
+
+-- Matches whose freeze frames are loaded, even when a match had none
+CREATE TABLE IF NOT EXISTS freeze_frame_matches (
+    match_id  INTEGER PRIMARY KEY
 );

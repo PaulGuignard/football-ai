@@ -1,4 +1,4 @@
-"""Tests for the shot_features table, on a few hand-made shots.
+"""Tests for the shot_features and shot_freeze_features tables, on hand-made shots.
 
 Each test builds a tiny database in memory, so nothing depends on the real
 data and the whole file runs in under a second.
@@ -7,9 +7,15 @@ data and the whole file runs in under a second.
 import math
 
 import duckdb
+import pandas as pd
 import pytest
 
-from football_ai.features import SCHEMA_PATH, build_shot_features
+from football_ai.features import (
+    SCHEMA_PATH,
+    build_shot_features,
+    build_shot_freeze_features,
+)
+from football_ai.xg import FREEZE_FEATURES, load_shots
 
 
 @pytest.fixture
@@ -74,3 +80,79 @@ def test_header_and_free_kick_flags(con):
     }
 
     assert rows == {"header": (True, False), "free_kick": (False, True)}
+
+
+def add_player(con, shot_id, x, y, teammate=False, position="Center Back"):
+    """Put one player in a shot's freeze frame."""
+    con.execute(
+        "INSERT INTO shot_freeze_frames (shot_id, match_id, position, teammate, x, y) "
+        "VALUES (?, 1, ?, ?, ?, ?)",
+        [shot_id, position, teammate, x, y],
+    )
+
+
+def freeze_features(con):
+    """Build both tables and return the freeze inputs of each shot, by shot_id."""
+    build_shot_features(con)
+    build_shot_freeze_features(con)
+    rows = con.execute("SELECT * FROM shot_freeze_features").df()
+    return rows.set_index("shot_id")
+
+
+def test_only_opponents_between_ball_and_goal_count_as_blocking(con):
+    add_shot(con, "s1")  # from the penalty spot, (108, 40)
+    add_player(con, "s1", 114, 40)  # right in the way
+    add_player(con, "s1", 100, 40)  # behind the shooter
+    add_player(con, "s1", 114, 60)  # well wide of the posts
+    add_player(con, "s1", 115, 41, teammate=True)  # in the way, but a teammate
+
+    assert freeze_features(con).loc["s1", "defenders_in_cone"] == 1
+
+
+def test_nearest_defender_ignores_the_keeper(con):
+    add_shot(con, "s1")
+    add_player(con, "s1", 119, 40, position="Goalkeeper")
+    add_player(con, "s1", 111, 44)  # 5 yards away, a 3-4-5 triangle
+    add_player(con, "s1", 100, 40)
+
+    assert freeze_features(con).loc["s1", "nearest_defender"] == pytest.approx(5.0)
+
+
+def test_keeper_on_his_line_in_the_middle(con):
+    add_shot(con, "s1")
+    add_player(con, "s1", 120, 40, position="Goalkeeper")
+    row = freeze_features(con).loc["s1"]
+
+    assert row["keeper_to_goal"] == pytest.approx(0.0)
+    assert row["keeper_in_cone"] == 1
+
+
+def test_keeper_caught_out_of_position(con):
+    add_shot(con, "s1")
+    add_player(con, "s1", 116, 30, position="Goalkeeper")
+    row = freeze_features(con).loc["s1"]
+
+    assert row["keeper_to_goal"] == pytest.approx(math.hypot(4, 10))
+    assert row["keeper_in_cone"] == 0
+
+
+def test_shot_with_nobody_in_the_picture_still_gets_a_row(con):
+    add_shot(con, "s1")
+    row = freeze_features(con).loc["s1"]
+
+    assert row["defenders_in_cone"] == 0
+    # Unknown, not zero: the model will have to fill these in
+    assert pd.isna(row["nearest_defender"])
+    assert pd.isna(row["keeper_to_goal"])
+
+
+def test_loaded_freeze_inputs_are_plain_numbers(con):
+    # One shot with a keeper, one with nobody in the picture: gaps to handle
+    add_shot(con, "s1")
+    add_player(con, "s1", 120, 40, position="Goalkeeper")
+    add_shot(con, "s2")
+    freeze_features(con)
+    shots = load_shots(con, freeze_frames=True).set_index("shot_id")
+
+    assert (shots[FREEZE_FEATURES].dtypes == "float64").all()
+    assert pd.isna(shots.loc["s2", "keeper_in_cone"])
