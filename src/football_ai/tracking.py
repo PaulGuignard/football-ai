@@ -16,14 +16,19 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.pipeline import Pipeline
 
-from football_ai.xg import FEATURES, evaluate, predict_xg
+from football_ai.xg import evaluate, model_inputs, predict_xg
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Results, not code: both are in .gitignore and can be rebuilt by re-running
 TRACKING_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
 ARTIFACTS_DIR = PROJECT_ROOT / "mlruns"
 EXPERIMENT = "xg"
-TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor"]
+# Types skops won't reload unless told to: the boosting's trees, and the
+# numpy dtype the imputer keeps to remember what it was trained on
+TRUSTED_TYPES = [
+    "sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor",
+    "numpy.dtype",
+]
 
 
 def use_experiment(
@@ -51,8 +56,9 @@ def log_xg_run(
 ) -> dict[str, float]:
     """Score a trained xG model on the test matches and record it as one MLflow run.
 
-    feature_set names the inputs the model saw ("v1": the eight shot inputs),
-    so that runs with and without player positions can be told apart later.
+    feature_set names the inputs the model saw ("v1": the eight shot inputs,
+    "v2": the same plus the freeze frame ones), so that runs with and without
+    player positions can be told apart.
     Returns the scores, so the caller can print them.
     """
     scores = evaluate(test_set["is_goal"], predict_xg(model, test_set))
@@ -63,7 +69,7 @@ def log_xg_run(
         mlflow.log_params({
             "model": type(estimator).__name__,
             "feature_set": feature_set,
-            "n_features": len(FEATURES),
+            "n_features": len(model_inputs(model)),
             "train_shots": len(train_set),
             "test_shots": len(test_set),
         })
@@ -73,9 +79,9 @@ def log_xg_run(
         if isinstance(estimator, HistGradientBoostingClassifier):
             # Not chosen by us: how many trees early stopping kept
             mlflow.log_metric("n_trees", estimator.n_iter_)
-        # MLflow saves models with skops, which refuses to reload the boosting
-        # trees unless told to: the file could be tampered with. We made it, so
-        # we trust that one type, not everything
+        # MLflow saves models with skops, which refuses to reload some types
+        # unless told to: the file could be tampered with. We made it, so we
+        # trust the few types listed above, not everything
         mlflow.sklearn.log_model(model, name="model", skops_trusted_types=TRUSTED_TYPES)
 
     return scores

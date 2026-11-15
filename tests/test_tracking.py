@@ -4,10 +4,16 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pytest
-from test_xg import make_model_shots
+from test_xg import make_model_shots, make_v2_shots
 
 from football_ai.tracking import log_cv_run, log_xg_run, use_experiment
-from football_ai.xg import build_boosting_model, predict_xg, split_by_match, train
+from football_ai.xg import (
+    build_boosting_model,
+    build_logistic_model,
+    predict_xg,
+    split_by_match,
+    train,
+)
 
 
 @pytest.fixture
@@ -34,6 +40,19 @@ def test_a_run_keeps_settings_scores_and_model(experiment):
     assert "metrics.n_trees" in run
 
     # The saved model gives back exactly the same xG
+    reloaded = mlflow.sklearn.load_model(f"runs:/{run['run_id']}/model")
+    assert predict_xg(reloaded, test_set).equals(predict_xg(model, test_set))
+
+
+@pytest.mark.parametrize("build_model", [build_logistic_model, build_boosting_model])
+def test_every_v2_model_can_be_saved_and_reloaded(experiment, build_model):
+    # The logistic regression carries an imputer, which skops checks too
+    train_set, test_set = split_by_match(make_v2_shots())
+    model = train(build_model("v2"), train_set)
+    log_xg_run("v2 model", model, train_set, test_set, feature_set="v2")
+
+    run = mlflow.search_runs(experiment_names=["test"]).iloc[0]
+    assert run["params.feature_set"] == "v2"
     reloaded = mlflow.sklearn.load_model(f"runs:/{run['run_id']}/model")
     assert predict_xg(reloaded, test_set).equals(predict_xg(model, test_set))
 

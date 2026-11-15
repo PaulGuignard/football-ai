@@ -15,6 +15,7 @@ from football_ai.features import (
     build_shot_features,
     build_shot_freeze_features,
 )
+from football_ai.xg import FREEZE_FEATURES, load_shots
 
 
 @pytest.fixture
@@ -143,3 +144,15 @@ def test_shot_with_nobody_in_the_picture_still_gets_a_row(con):
     # Unknown, not zero: the model will have to fill these in
     assert pd.isna(row["nearest_defender"])
     assert pd.isna(row["keeper_to_goal"])
+
+
+def test_loaded_freeze_inputs_are_plain_numbers(con):
+    # One shot with a keeper, one with nobody in the picture: gaps to handle
+    add_shot(con, "s1")
+    add_player(con, "s1", 120, 40, position="Goalkeeper")
+    add_shot(con, "s2")
+    freeze_features(con)
+    shots = load_shots(con, freeze_frames=True).set_index("shot_id")
+
+    assert (shots[FREEZE_FEATURES].dtypes == "float64").all()
+    assert pd.isna(shots.loc["s2", "keeper_in_cone"])

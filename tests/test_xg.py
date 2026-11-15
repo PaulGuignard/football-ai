@@ -7,11 +7,13 @@ import pandas as pd
 import pytest
 
 from football_ai.xg import (
+    FREEZE_FEATURES,
     build_boosting_model,
     build_logistic_model,
     coefficients,
     cross_validate_by_match,
     evaluate,
+    model_inputs,
     predict_xg,
     split_by_match,
     train,
@@ -45,6 +47,20 @@ def make_model_shots(n: int = 400, seed: int = 0) -> pd.DataFrame:
         "play_pattern": rng.choice(["Regular Play", "From Counter", "From Corner"], n),
         "is_goal": (rng.random(n) < 0.6 * np.exp(-distance / 8)).astype(int),
     })
+
+
+def make_v2_shots(n: int = 400, seed: int = 0) -> pd.DataFrame:
+    """The same fake shots plus freeze frame inputs, some of them missing."""
+    rng = np.random.default_rng(seed)
+    shots = make_model_shots(n, seed)
+    shots["defenders_in_cone"] = rng.integers(0, 4, n)
+    shots["nearest_defender"] = rng.uniform(0, 8, n)
+    shots["keeper_to_goal"] = rng.uniform(0, 10, n)
+    shots["keeper_in_cone"] = (rng.random(n) < 0.9).astype(float)
+    # Every tenth shot has no keeper in the picture, every 20th nobody at all
+    shots.loc[shots.index % 10 == 0, ["keeper_to_goal", "keeper_in_cone"]] = np.nan
+    shots.loc[shots.index % 20 == 0, "nearest_defender"] = np.nan
+    return shots
 
 
 def test_no_match_ends_up_on_both_sides():
@@ -105,6 +121,37 @@ def test_unknown_play_pattern_does_not_break_predictions(build_model):
     new_shot["play_pattern"] = "From Keeper"  # never seen in training
 
     assert predict_xg(model, new_shot).between(0, 1).all()
+
+
+@pytest.mark.parametrize("build_model", MODEL_BUILDERS)
+def test_v2_models_cope_with_missing_values(build_model):
+    shots = make_v2_shots()
+    model = train(build_model("v2"), shots)
+
+    assert predict_xg(model, shots).between(0, 1).all()
+
+
+@pytest.mark.parametrize("build_model", MODEL_BUILDERS)
+def test_only_v2_models_read_the_freeze_frame_inputs(build_model):
+    v1_inputs = model_inputs(build_model("v1"))
+    v2_inputs = model_inputs(build_model("v2"))
+
+    assert not set(FREEZE_FEATURES) & set(v1_inputs)
+    assert set(FREEZE_FEATURES) <= set(v2_inputs)
+
+
+def test_a_v1_model_ignores_extra_columns():
+    # Same shots with or without the freeze columns: same v1 predictions
+    v1_xg = predict_xg(train(build_logistic_model(), make_model_shots()), make_model_shots())
+    v2_shots = make_v2_shots()
+    xg_with_extra = predict_xg(train(build_logistic_model(), v2_shots), v2_shots)
+
+    assert np.allclose(v1_xg, xg_with_extra)
+
+
+def test_unknown_feature_set_is_refused():
+    with pytest.raises(ValueError):
+        build_logistic_model("v3")
 
 
 def test_boosting_gives_the_same_xg_when_trained_twice():
