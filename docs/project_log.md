@@ -694,3 +694,83 @@ The fair claim is that on these test matches it comes close.
 
 **Next.** The same positions will be given raw to a neural network in PyTorch
 to see whether it finds on its own what I built here by hand.
+
+## A neural network on the raw positions (15/11)
+
+`src/football_ai/deep_sets.py`, `scripts/13_compare_deep_sets.py`
+
+**The question.** The four inputs of the last entry are my own idea of what
+matters in a freeze frame. Could a neural network find on its own what
+matters if it gets the positions of the players as they are?
+
+**Why Deep Sets.** The players seen on a freeze frame form a set. There are
+between 1 and 21 of them and they come in no particular order, while a plain
+network expects the same inputs in the same order every time. I looked at
+four options.
+
+- Sorting the players by distance and filling the gaps with zeros. The order
+  is arbitrary and a defender who moves a few inches can swap places with
+  another one in the list.
+- Drawing the players on a grid and using a network made for images. The
+  grid rounds every position and is almost empty and the network would need
+  far more data.
+- A transformer or a graph network where each player looks at the others.
+  They can model how players interact but they are bigger and hungrier for
+  data than 37,000 shots can feed. The transformer stays planned for the
+  sequences of play where there is much more data.
+- **Deep Sets**, the simplest network built for sets. The same small network
+  reads every player and the results are added up, so the order and the
+  number of players don't matter. Then a second network reads that sum next
+  to the eight shot inputs of v1 and gives the xG.
+
+Each player comes in as six numbers which are his position seen from the
+ball and from the centre of the goal, whether he is a teammate and whether
+he is the keeper. Every shot gets 21 slots and a mask marks the empty ones
+so they add nothing to the sum. A test checks that shuffling the players
+leaves the xG unchanged.
+
+**Training.** The network is trained with Adam on batches of 256 shots. 10% of
+the training matches are held back and training stops after ten epochs
+without progress there. The best weights seen are kept. Only the weights are
+saved in MLflow as a plain PyTorch file that can be read back without
+running any code stored in it. PyTorch is installed in its CPU build since
+the whole training takes about a minute without a graphics card.
+
+**Results.** The same five folds as the other models.
+
+| | Cross-validated log loss | Folds where Deep Sets does better |
+|---|---|---|
+| Gradient boosting with my four inputs | 0.2515 | 0 of 5 |
+| Logistic regression with my four inputs | 0.2539 | 2 of 5 |
+| Deep Sets on the raw positions | 0.2541 | |
+
+The test matches are used once.
+
+| | Log loss ↓ | Brier ↓ | AUC ↑ | Expected goals (716 real) |
+|---|---|---|---|---|
+| Gradient boosting, v2 | 0.2531 | 0.0721 | 0.812 | 692 |
+| Deep Sets, raw positions | 0.2582 | 0.0728 | 0.801 | 692 |
+| StatsBomb xG | 0.2504 | 0.0709 | 0.818 | 676 |
+
+![Calibration of the Deep Sets network](figures/xg_calibration_deep_sets.png)
+
+**What it means.** The network did learn from the raw positions. It goes from
+0.2620 for the shot inputs alone to 0.2541, so it found on its own most of
+what my four inputs bring to a logistic regression. It draws level with that
+logistic regression but loses to the boosting on every fold. With 37,000
+shots, inputs built from knowing the game still beat a network that has to
+discover them.
+
+The network is also less stable than the trees. With the same code and the
+same seed it stopped at epoch 29 on my laptop and at epoch 7 on another
+machine with different library versions, where it predicted 639 goals
+instead of 692. The trees gave almost the same numbers on both. Averaging a
+few networks trained from different seeds would steady it, but a first try
+gained only about 0.0005.
+
+**Decision.** The boosting with the four hand-built inputs stays the xG model
+of the project because it scores best and is faster and steadier. That
+closes the xG part.
+
+**Next.** A demo where you place a shot on a pitch and get its xG back from an
+API.

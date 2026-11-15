@@ -4,9 +4,17 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pytest
+from test_deep_sets import make_keeper_shots
 from test_xg import make_model_shots, make_v2_shots
 
-from football_ai.tracking import log_cv_run, log_xg_run, use_experiment
+from football_ai.deep_sets import train_deep_sets
+from football_ai.tracking import (
+    load_deep_sets,
+    log_cv_run,
+    log_deep_sets_run,
+    log_xg_run,
+    use_experiment,
+)
 from football_ai.xg import (
     build_boosting_model,
     build_logistic_model,
@@ -71,3 +79,17 @@ def test_a_cv_run_keeps_the_setting_and_every_fold(experiment):
 
     history = mlflow.MlflowClient().get_metric_history(run["run_id"], "fold_log_loss")
     assert [m.value for m in sorted(history, key=lambda m: m.step)] == [0.25, 0.27, 0.26]
+
+
+def test_a_deep_sets_run_can_be_reloaded(experiment):
+    shots, positions, mask, _ = make_keeper_shots(n=300)
+    learn, check = shots.iloc[:240], shots.iloc[240:]
+    model = train_deep_sets(learn, positions[:240], mask[:240], max_epochs=3)
+    log_deep_sets_run("deep sets", model, learn, check, positions[240:], mask[240:])
+
+    run = mlflow.search_runs(experiment_names=["test"]).iloc[0]
+    assert run["params.model"] == "DeepSets"
+    reloaded = load_deep_sets(run["run_id"])
+    before = model.predict_xg(check, positions[240:], mask[240:])
+    after = reloaded.predict_xg(check, positions[240:], mask[240:])
+    assert np.allclose(before, after)
