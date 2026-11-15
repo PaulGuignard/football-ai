@@ -9,7 +9,8 @@ uses those values to evaluate players beyond the usual stats.
 
 **Status.** Work in progress. The data pipeline, the exploration and the
 expected goals (xG) models are done, including a version that knows where the
-keeper and the defenders stand. Every experiment is tracked in MLflow.
+keeper and the defenders stand and a neural network tried against it. Every
+experiment is tracked in MLflow. A demo comes next.
 
 ![Where shots are taken and how often they score](docs/figures/shot_map.png)
 
@@ -44,6 +45,7 @@ much smaller area than shots.*
   | Gradient boosting, tuned | 0.261 | 0.796 |
   | Logistic regression with player positions | 0.257 | 0.804 |
   | **Gradient boosting with player positions** | **0.253** | **0.812** |
+  | Deep Sets neural network on raw positions | 0.258 | 0.801 |
   | StatsBomb xG (professional model) | 0.250 | 0.818 |
 
   The logistic regression closes about 80% of the gap between the baseline
@@ -62,6 +64,12 @@ much smaller area than shots.*
   the gap between the baseline and StatsBomb on the test matches.
 
   ![Calibration with freeze frames](docs/figures/xg_calibration_v2.png)
+- **A neural network on the raw positions.** A Deep Sets network in PyTorch
+  reads every visible player as they are, in any order and in any number. It
+  finds on its own most of what the four hand-built inputs bring and draws
+  level with the logistic regression that uses them, but the boosting beats
+  it on every fold. With 37,000 shots the inputs built from knowing the game
+  still win, so the boosting stays the xG model of the project.
 - **Experiment tracking with MLflow.** Every run keeps its settings, its
   scores and the trained model. Settings are chosen by cross-validation and
   the test set is only used once.
@@ -76,10 +84,9 @@ Every step, decision and result is written up in the
    Done.
 2. ~~**Experiment tracking** with MLflow and tuning by cross-validation.~~
    Done.
-3. **xG with the players' positions** to know where the keeper and the
-   defenders stand when the shot is taken. ~~Inputs built by hand and fed to
-   gradient boosting.~~ Done. Next the raw positions fed to a neural network
-   in PyTorch.
+3. ~~**xG with the players' positions** to know where the keeper and the
+   defenders stand when the shot is taken, with inputs built by hand and
+   with a neural network on the raw positions.~~ Done.
 4. **Demo.** An app where you place a shot on a pitch and get its xG back
    from an API built with FastAPI and Docker.
 5. **Action values.** The chance of scoring before and after each action.
@@ -90,9 +97,9 @@ Every step, decision and result is written up in the
 
 ## Stack
 
-Python, SQL (DuckDB), pandas, scikit-learn, MLflow, matplotlib / mplsoccer, pytest,
-GitHub Actions, uv and Git.
-Coming next are PyTorch, FastAPI, Docker and an LLM agent with RAG.
+Python, SQL (DuckDB), pandas, scikit-learn, PyTorch, MLflow, matplotlib /
+mplsoccer, pytest, GitHub Actions, uv and Git.
+Coming next are FastAPI, Docker and an LLM agent with RAG.
 
 ## Project structure
 
@@ -118,6 +125,7 @@ uv run python -m football_ai.features       # build the features tables
 uv run python scripts/07_evaluate_xg.py     # train and compare the xG models
 uv run python scripts/10_tune_boosting.py   # tune the boosting, log runs in MLflow
 uv run python scripts/12_compare_feature_sets.py   # with and without positions
+uv run python scripts/13_compare_deep_sets.py      # the neural network
 uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # browse the runs
 uv run pytest                               # run the tests
 ```
