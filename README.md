@@ -7,9 +7,9 @@ reward the last touch. This project gives a value to every pass, carry and
 dribble according to how much it raises the chances of scoring and then
 uses those values to evaluate players beyond the usual stats.
 
-**Status.** Work in progress. The data pipeline, the exploration and two
-expected goals (xG) models are done and every experiment is tracked in
-MLflow. The players' positions come next.
+**Status.** Work in progress. The data pipeline, the exploration and the
+expected goals (xG) models are done, including a version that knows where the
+keeper and the defenders stand. Every experiment is tracked in MLflow.
 
 ![Where shots are taken and how often they score](docs/figures/shot_map.png)
 
@@ -32,15 +32,18 @@ much smaller area than shots.*
   - The shot angle adds information that distance alone doesn't give.
   - Shots from counter-attacks score 15.5% of the time against about 10% for
     the others even though they are taken from about the same distance.
-- **First xG models.** A logistic regression and gradient boosting built on
-  eight simple inputs and tested on 304 matches they never saw in training.
+- **xG models.** A logistic regression and gradient boosting built first on
+  eight simple inputs and then on the players' positions too, all tested on
+  304 matches they never saw in training.
 
   | | Log loss ↓ | AUC ↑ |
   |---|---|---|
   | Naive baseline (same xG for every shot) | 0.317 | 0.500 |
   | Logistic regression | 0.264 | 0.788 |
   | Gradient boosting, default settings | 0.263 | 0.791 |
-  | **Gradient boosting, tuned** | **0.261** | **0.796** |
+  | Gradient boosting, tuned | 0.261 | 0.796 |
+  | Logistic regression with player positions | 0.257 | 0.804 |
+  | **Gradient boosting with player positions** | **0.253** | **0.812** |
   | StatsBomb xG (professional model) | 0.250 | 0.818 |
 
   The logistic regression closes about 80% of the gap between the baseline
@@ -51,6 +54,14 @@ much smaller area than shots.*
   Gradient boosting tuned by cross-validation on whole matches does better
   on almost every fold but by too little to matter. The gain is about 0.001
   of log loss. With these inputs the limit is the data and not the model.
+- **Players' positions.** StatsBomb's freeze frames show where everyone stands
+  when the shot is taken. Four inputs computed from them in SQL count the
+  defenders between the ball and the goal, measure the space around the
+  shooter and say where the keeper is. They lower the log loss eight to nine
+  times more than tuning did. The boosting with these inputs closes 96% of
+  the gap between the baseline and StatsBomb on the test matches.
+
+  ![Calibration with freeze frames](docs/figures/xg_calibration_v2.png)
 - **Experiment tracking with MLflow.** Every run keeps its settings, its
   scores and the trained model. Settings are chosen by cross-validation and
   the test set is only used once.
@@ -66,9 +77,9 @@ Every step, decision and result is written up in the
 2. ~~**Experiment tracking** with MLflow and tuning by cross-validation.~~
    Done.
 3. **xG with the players' positions** to know where the keeper and the
-   defenders stand when the shot is taken. Inputs built by hand and fed to
-   gradient boosting will be compared with the raw positions fed to a
-   neural network in PyTorch.
+   defenders stand when the shot is taken. ~~Inputs built by hand and fed to
+   gradient boosting.~~ Done. Next the raw positions fed to a neural network
+   in PyTorch.
 4. **Demo.** An app where you place a shot on a pitch and get its xG back
    from an API built with FastAPI and Docker.
 5. **Action values.** The chance of scoring before and after each action.
@@ -90,7 +101,7 @@ src/football_ai/    reusable code: features table, xG models, MLflow tracking
 tests/              pytest tests, run on every pull request
 scripts/            data loading, exploration, training and evaluation
 sql/schema.sql      database schema
-sql/features/       the table the models learn from
+sql/features/       the tables the models learn from
 sql/explore/        exploration queries
 docs/               project log and figures
 ```
@@ -102,9 +113,11 @@ Requires [uv](https://docs.astral.sh/uv/).
 ```bash
 uv sync                                     # install the environment
 uv run python scripts/04_load_events.py     # load the data (~25 min)
-uv run python -m football_ai.features       # build the features table
+uv run python scripts/11_load_freeze_frames.py   # load the players' positions (~20 min)
+uv run python -m football_ai.features       # build the features tables
 uv run python scripts/07_evaluate_xg.py     # train and compare the xG models
 uv run python scripts/10_tune_boosting.py   # tune the boosting, log runs in MLflow
+uv run python scripts/12_compare_feature_sets.py   # with and without positions
 uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # browse the runs
 uv run pytest                               # run the tests
 ```
