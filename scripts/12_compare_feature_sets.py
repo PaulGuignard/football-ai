@@ -4,10 +4,13 @@ v1 is the eight inputs from the event data, v2 adds the four from the freeze
 frames. Every candidate is scored on the same 5 folds of the training
 matches and logged in MLflow. The boosting's tree size is chosen again for v2,
 since more inputs may call for bigger trees. Then the v2 models are scored
-once on the test matches, next to the v1 ones and StatsBomb's xG.
+once on the test matches, next to the v1 ones and StatsBomb's xG, and their
+calibration is drawn.
 
 Usage:
     uv run python scripts/12_compare_feature_sets.py
+Output:
+    two score tables in the terminal, docs/figures/xg_calibration_v2.png
 """
 
 from pathlib import Path
@@ -15,6 +18,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from football_ai.plots import draw_calibration
 from football_ai.tracking import log_cv_run, log_xg_run, use_experiment
 from football_ai.xg import (
     build_boosting_model,
@@ -29,6 +33,7 @@ from football_ai.xg import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "data" / "football.duckdb"
+FIGURE_PATH = PROJECT_ROOT / "docs" / "figures" / "xg_calibration_v2.png"
 
 # What won in 10_tune_boosting.py; only the tree size is searched again
 BOOSTING = {"learning_rate": 0.05, "min_samples_leaf": 20, "max_iter": 1000}
@@ -96,18 +101,31 @@ def main() -> None:
         "logistic v2": models["logistic v2"],
         f"boosting v2, {best_leaves} leaves": models[f"boosting v2, {best_leaves} leaves"],
     }
-    test_scores = {}
+    test_scores, test_xg = {}, {}
     for name, (feature_set, _, build) in finalists.items():
         model = train(build(), train_set)
+        test_xg[name] = predict_xg(model, test_set)
         if feature_set == "v2":
             # The v1 test runs were already logged by 09 and 10
             test_scores[name] = log_xg_run(name, model, train_set, test_set, feature_set="v2")
         else:
-            test_scores[name] = evaluate(test_set["is_goal"], predict_xg(model, test_set))
+            test_scores[name] = evaluate(test_set["is_goal"], test_xg[name])
     test_scores["StatsBomb xG"] = evaluate(test_set["is_goal"], test_set["statsbomb_xg"])
 
     print(f"\nOn the test matches ({len(test_set):,} shots, used once):")
     print(pd.DataFrame(test_scores).T.round(4).to_string())
+
+    draw_calibration(
+        test_set["is_goal"],
+        {
+            "Logistic regression, v2": (test_xg["logistic v2"], "#2a78d6"),
+            "Gradient boosting, v2": (test_xg[f"boosting v2, {best_leaves} leaves"], "#1f9e74"),
+            "StatsBomb xG": (test_set["statsbomb_xg"], "#eb6834"),
+        },
+        FIGURE_PATH,
+        title="Calibration on the test matches, with freeze frames",
+    )
+    print(f"\nSaved {FIGURE_PATH.relative_to(PROJECT_ROOT)}")
 
 
 if __name__ == "__main__":

@@ -15,10 +15,9 @@ Output:
 from pathlib import Path
 
 import duckdb
-import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.calibration import calibration_curve
 
+from football_ai.plots import draw_calibration
 from football_ai.xg import (
     build_boosting_model,
     build_logistic_model,
@@ -32,39 +31,6 @@ from football_ai.xg import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "data" / "football.duckdb"
 FIGURE_PATH = PROJECT_ROOT / "docs" / "figures" / "xg_calibration.png"
-
-
-def draw_calibration(test_set: pd.DataFrame) -> None:
-    """For shots grouped by predicted xG, compare the prediction to reality."""
-    fig, ax = plt.subplots(figsize=(6, 6))
-    fig.set_facecolor("#fcfcfb")
-    ax.set_facecolor("#fcfcfb")
-    ax.plot([0, 1], [0, 1], linestyle="--", color="#8a8a86", linewidth=1)
-
-    for column, label, color in [
-        ("logistic_xg", "Logistic regression", "#2a78d6"),
-        ("boosting_xg", "Gradient boosting", "#1f9e74"),
-        ("statsbomb_xg", "StatsBomb xG", "#eb6834"),
-    ]:
-        # 10 groups with the same number of shots in each
-        real_rate, predicted = calibration_curve(
-            test_set["is_goal"], test_set[column], n_bins=10, strategy="quantile"
-        )
-        ax.plot(predicted, real_rate, marker="o", markersize=5, linewidth=2,
-                color=color, label=label)
-
-    ax.set_xlim(0, 0.5)
-    ax.set_ylim(0, 0.5)
-    ax.set_xlabel("Predicted chance of scoring (average xG of the group)")
-    ax.set_ylabel("Share of those shots that were goals")
-    ax.set_title("Calibration on the test matches", loc="left")
-    ax.text(0.30, 0.27, "perfect calibration", color="#8a8a86", rotation=45, fontsize=9)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(frameon=False, loc="upper left")
-
-    FIGURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(FIGURE_PATH, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
-    print(f"Saved {FIGURE_PATH.relative_to(PROJECT_ROOT)}")
 
 
 def main() -> None:
@@ -93,7 +59,16 @@ def main() -> None:
     print()
     print(scores.round(4).to_string())
     print()
-    draw_calibration(test_set)
+    draw_calibration(
+        test_set["is_goal"],
+        {
+            "Logistic regression": (test_set["logistic_xg"], "#2a78d6"),
+            "Gradient boosting": (test_set["boosting_xg"], "#1f9e74"),
+            "StatsBomb xG": (test_set["statsbomb_xg"], "#eb6834"),
+        },
+        FIGURE_PATH,
+    )
+    print(f"Saved {FIGURE_PATH.relative_to(PROJECT_ROOT)}")
 
 
 if __name__ == "__main__":
