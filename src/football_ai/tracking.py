@@ -20,6 +20,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.pipeline import Pipeline
 
 from football_ai.deep_sets import DeepSetsNetwork, DeepSetsXG
+from football_ai.model_store import TRUSTED_TYPES
 from football_ai.xg import evaluate, model_inputs, predict_xg
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,12 +28,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TRACKING_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
 ARTIFACTS_DIR = PROJECT_ROOT / "mlruns"
 EXPERIMENT = "xg"
-# Types skops won't reload unless told to: the boosting's trees, and the
-# numpy dtype the imputer keeps to remember what it was trained on
-TRUSTED_TYPES = [
-    "sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor",
-    "numpy.dtype",
-]
 
 
 def use_experiment(
