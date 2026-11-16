@@ -1379,6 +1379,7 @@ dependencies = [
     { name = "pandas", version = "3.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.9.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "skops" },
     { name = "statsbombpy" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "python_full_version < '3.11' and sys_platform == 'darwin'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "python_full_version < '3.11' and sys_platform != 'darwin'" },
@@ -1400,6 +1401,7 @@ requires-dist = [
     { name = "mplsoccer", specifier = ">=1.8.1" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
+    { name = "skops", specifier = ">=0.16.0" },
     { name = "statsbombpy", specifier = ">=1.22.0" },
     { name = "torch", specifier = ">=2.9", index = "https://download.pytorch.org/whl/cpu" },
 ]
