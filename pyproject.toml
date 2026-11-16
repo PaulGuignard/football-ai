@@ -7,18 +7,16 @@ authors = [
     { name = "Paul Guignard", email = "guignardpa@cy-tech.fr" }
 ]
 requires-python = ">=3.10"
+# Only what the API needs to serve the model. Everything used to load the
+# data, train and track models is in the "train" group below, so the Docker
+# image stays small
 dependencies = [
     "duckdb>=1.5.6",
-    "fastapi>=0.162.5",
-    "matplotlib>=3.10.9",
-    "mlflow>=3.18.0",
-    "mplsoccer>=1.8.1",
+    "fastapi>=0.162",
     "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
-    "skops>=0.16.0",
-    "statsbombpy>=1.22.0",
-    "torch>=2.9",
-    "uvicorn>=0.54.0",
+    "skops>=0.16",
+    "uvicorn>=0.54",
 ]
 
 [project.scripts]
@@ -30,10 +28,22 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.14.0",
+    "httpx2>=2.14",
     "pytest>=9.1.1",
     "ruff>=0.17.2",
 ]
+train = [
+    "matplotlib>=3.10.9",
+    "mlflow>=3.18.0",
+    "mplsoccer>=1.8.1",
+    "statsbombpy>=1.22.0",
+    "torch>=2.9",
+]
+
+# A plain `uv sync` still installs everything; the Docker image asks for
+# `--no-default-groups` to get the API's dependencies only
+[tool.uv]
+default-groups = ["dev", "train"]
 
 # PyTorch's CPU build: no graphics card needed, and far lighter than the
 # default Linux build, which ships the NVIDIA libraries
