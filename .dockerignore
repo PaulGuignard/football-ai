@@ -1,0 +1,15 @@
+# Kept out of the image: data, results and local tools
+data/
+mlruns/
+mlflow.db
+.venv/
+.git/
+.github/
+docs/
+notebooks/
+tests/
+scripts/
+sql/
+**/__pycache__/
+.ruff_cache/
+.pytest_cache/
