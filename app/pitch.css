@@ -1,0 +1,118 @@
+/* The pitch component: a stadium screen above a mown half pitch */
+
+.xg-pitch {
+  --grass: #2f6c36;
+  --grass-dark: #29612f;
+  --chalk: #eef3ea;
+  --screen: #12201a;
+  --amber: #ffb547;
+  --shooter: #5fe08f;
+  --teammate: #3d8ae6;
+  --defender: #e0525f;
+  --keeper: #f2a541;
+  --ink: #12201a;
+  max-width: 620px;
+  margin: 0 auto;
+  font-family: "Barlow", system-ui, sans-serif;
+  color: var(--ink);
+  user-select: none;
+}
+
+/* The screen at the back of the stand */
+.board {
+  background: var(--screen);
+  color: var(--chalk);
+  border-radius: 6px 6px 0 0;
+  padding: 14px 20px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 20px;
+  align-items: center;
+}
+.score {
+  grid-row: span 2;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: "Barlow Condensed", "Barlow", sans-serif;
+  color: var(--amber);
+}
+.xg-label { font-size: 22px; font-weight: 500; opacity: 0.8; }
+.xg-value {
+  font-size: 64px;
+  line-height: 0.9;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6ch;
+  transition: opacity 0.15s;
+}
+.words { margin: 0; font-size: 17px; font-weight: 500; }
+.facts { margin: 2px 0 0; font-size: 14px; opacity: 0.7; }
+.waiting .xg-value { opacity: 0.35; }
+.broken .xg-value { color: var(--defender); }
+
+.pitch {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--grass);
+  border-radius: 0 0 6px 6px;
+  touch-action: none;
+}
+.grass { fill: var(--grass); }
+.grass.dark { fill: var(--grass-dark); }
+.chalk { fill: none; stroke: var(--chalk); stroke-width: 0.3; opacity: 0.85; }
+.spot { fill: var(--chalk); }
+.goal { fill: none; stroke: var(--chalk); stroke-width: 0.35; }
+.cone { fill: var(--chalk); opacity: 0.13; pointer-events: none; }
+.ball { fill: #fff; stroke: var(--ink); stroke-width: 0.15; pointer-events: none; }
+
+.shirt { cursor: grab; }
+.shirt path { stroke: #fff; stroke-width: 0.28; stroke-linejoin: round; }
+.shirt text {
+  font-family: "Barlow Condensed", "Barlow", sans-serif;
+  font-size: 2.05px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: #fff;
+  pointer-events: none;
+}
+.shirt.shooter path { fill: var(--shooter); }
+.shirt.shooter text, .shirt.keeper text { fill: var(--ink); }
+.shirt.teammate path { fill: var(--teammate); }
+.shirt.defender path { fill: var(--defender); }
+.shirt.keeper path { fill: var(--keeper); }
+.shirt.big > * { transform: scale(1.15); }
+.shirt.lifted { cursor: grabbing; filter: drop-shadow(0 0.6px 0.5px rgba(0, 0, 0, 0.45)); }
+.shirt.leaving { opacity: 0.4; }
+.shirt.unavailable { opacity: 0.3; cursor: not-allowed; }
+
+.readout {
+  font-family: "Barlow Condensed", "Barlow", sans-serif;
+  font-size: 2.2px;
+  font-weight: 600;
+  fill: var(--chalk);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.bench-bg { fill: rgba(0, 0, 0, 0.18); }
+.bench-name {
+  font-size: 1.9px;
+  fill: var(--chalk);
+  text-anchor: middle;
+  opacity: 0.85;
+}
+
+.hint { margin: 8px 2px 0; font-size: 14px; opacity: 0.75; }
+
+/* On a phone the screen puts the number above the words */
+@media (max-width: 560px) {
+  .board { grid-template-columns: 1fr; padding: 12px 16px; }
+  .score { grid-row: auto; margin-bottom: 4px; }
+  .xg-value { font-size: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xg-value { transition: none; }
+}
