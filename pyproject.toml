@@ -32,6 +32,11 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.2",
 ]
+# What the Streamlit demo needs: it only talks to the API, no model here
+app = [
+    "requests>=2.32",
+    "streamlit>=1.65",
+]
 train = [
     "matplotlib>=3.10.9",
     "mlflow>=3.18.0",
@@ -40,10 +45,10 @@ train = [
     "torch>=2.9",
 ]
 
-# A plain `uv sync` still installs everything; the Docker image asks for
-# `--no-default-groups` to get the API's dependencies only
+# A plain `uv sync` still installs everything. The API image asks for
+# `--no-default-groups` and the demo image for `--only-group app`
 [tool.uv]
-default-groups = ["dev", "train"]
+default-groups = ["dev", "train", "app"]
 
 # PyTorch's CPU build: no graphics card needed, and far lighter than the
 # default Linux build, which ships the NVIDIA libraries
