@@ -831,13 +831,26 @@ from a guess.
   first time and never under pressure.
 - The longest header in the data was taken 27 yards out. With a header
   ticked the shooter can't go further than 30 yards from goal.
-- 99% of the 9,809 shots under pressure had an outfield opponent within 5
-  yards. Without one, the pressure box is greyed out.
+- All 1,850 one-on-ones had nobody between the ball and the goal, so the
+  one-on-one box is greyed out when a defender stands in that triangle. The
+  reverse doesn't hold, since 16,381 shots with an empty triangle were not
+  one-on-ones. The analyst sees the shooter running through alone and the
+  freeze frame, being a still picture, doesn't.
 - Only 1 shot of the 37,481 had no defender anywhere in the picture, so the
   last defender can't be taken off the pitch. To try a one-on-one, he goes
   behind the shooter like in a real match.
 - Fewer than 1% of the shots are taken from further than 40 yards. Past that
   the screen says the number should be taken with care.
+
+**An option the demo leaves out.** Ticking and unticking each option on
+every shot shows how much the model still uses it. A header moves the xG by
+0.048 on average, a one-on-one by 0.016, first time by 0.003 and pressure by
+0.003. Pressure mattered a lot in the first model, which didn't know where
+the defenders were. Now the distance to the nearest defender says nearly the
+same thing, since 80% of the shots with a defender within a yard are tagged
+as under pressure against 5% beyond three yards. The model keeps the input,
+as it does no harm, but the demo no longer asks for it. First time stays
+because it says something real about the shot even if its effect is small.
 
 ## An xG that never rises with distance, and two hidden bugs (18/11)
 
