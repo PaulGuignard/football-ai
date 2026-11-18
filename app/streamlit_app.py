@@ -15,11 +15,10 @@ from football_ai.demo import (
     DEFAULT_PLAYERS,
     DEFAULT_SHOOTER,
     PLAY_PATTERNS,
-    PRESSURE_REACH,
     allowed_spot,
     apply_edit,
     build_request,
-    can_be_pressed,
+    can_be_one_on_one,
     consistent_shot,
     describe,
     rarity_note,
@@ -32,7 +31,6 @@ FLAGS = {
                      "Shot straight from a free kick, from outside the box."),
     "is_first_time": ("First time", "Hit without controlling the ball first."),
     "is_one_on_one": ("One-on-one", "Alone in front of the keeper."),
-    "is_under_pressure": ("Under pressure", "An opponent is closing the shooter down."),
 }
 
 st.set_page_config(page_title="How likely is this shot to go in?", page_icon="⚽",
@@ -94,11 +92,11 @@ def xg_board(shot: dict) -> dict:
 if "shooter" not in st.session_state:
     start_again()
 
-# Pressure needs someone to put it on. Unticked here, before the box is drawn,
-# because Streamlit won't let a widget's value change once it's on the page
-pressable = can_be_pressed(st.session_state.shooter, st.session_state.players)
-if not pressable:
-    st.session_state.is_under_pressure = False
+# A one-on-one needs nobody in the way. Unticked here, before the box is
+# drawn, because Streamlit won't let a widget's value change once it's on the page
+alone = can_be_one_on_one(st.session_state.shooter, st.session_state.players)
+if not alone:
+    st.session_state.is_one_on_one = False
 
 st.title("How likely is this shot to go in?")
 st.markdown(
@@ -117,22 +115,24 @@ with right:
         # What a direct free kick or a header rules out is greyed
         blocked = (free_kick and flag != "is_free_kick") or (
             header and flag == "is_first_time")
-        if flag == "is_under_pressure" and not pressable:
+        if flag == "is_one_on_one" and not alone:
             blocked = True
-            help_text = f"Needs an opponent within {PRESSURE_REACH:.0f} yards of the shooter."
+            help_text = "Never with a defender between the ball and the goal."
         shot[flag] = st.checkbox(label, key=flag, help=help_text, disabled=blocked,
                                  on_change=tidy_options)
     shot["play_pattern"] = st.selectbox(
         "How the attack started", PLAY_PATTERNS, key="play_pattern", disabled=free_kick,
         help="A header can still come from a corner or a free kick taken elsewhere.",
         on_change=tidy_options)
-    shot = consistent_shot(shot, pressure_possible=pressable)
+    shot = consistent_shot(shot, one_on_one_possible=alone)
 
     st.button("Start again", on_click=start_again)
     st.caption(
         "The model is gradient boosting trained on 37,481 shots from the 2015/16 Premier "
         "League, La Liga, Serie A and Ligue 1 (StatsBomb open data). It knows where the "
-        "shot is taken from, where the keeper and the defenders stand and the options above."
+        "shot is taken from, where the keeper and the defenders stand and the options above. "
+        "Whether the shooter is under pressure isn't asked: once the model knows where the "
+        "defenders stand, it moves the xG by 0.003 on average."
     )
 
 with left:

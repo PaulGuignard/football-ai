@@ -16,7 +16,7 @@ PLAY_PATTERNS = [
 ]
 
 # A starting picture: a shot from the penalty spot, the keeper on his line, a
-# defender in the way, close enough to press, and a teammate on the side
+# defender in the way and a teammate on the side
 DEFAULT_SHOOTER = {"x": 108.0, "y": 40.0}
 DEFAULT_PLAYERS = [
     {"x": 119.0, "y": 40.0, "teammate": False, "keeper": True},
@@ -34,15 +34,14 @@ NEWCOMERS = {
 }
 
 # In the 37,481 shots, a direct free kick is never a header, never first time
-# and never under pressure, and it always comes from a free kick
-FREE_KICK_EXCLUDES = ("is_header", "is_first_time", "is_one_on_one", "is_under_pressure")
-# 99% of the shots under pressure have an outfield opponent this close (yards)
-PRESSURE_REACH = 5.0
+# and never a one-on-one, and it always comes from a free kick
+FREE_KICK_EXCLUDES = ("is_header", "is_first_time", "is_one_on_one")
 # The longest header in the data is 27 yards out; 30 leaves a little room
 HEADER_REACH = 30.0
 # Fewer than 1% of the shots are taken from further out than this
 RARE_DISTANCE = 40.0
 GOAL = (120.0, 40.0)
+POSTS = (36.0, 44.0)
 
 
 def on_pitch(x: float, y: float) -> bool:
@@ -111,12 +110,27 @@ def is_defender(player: dict) -> bool:
     return not player["teammate"] and not player["keeper"]
 
 
-def can_be_pressed(shooter: dict, players: list[dict]) -> bool:
-    """True if an outfield opponent is close enough to put the shooter under pressure."""
-    return any(
-        is_defender(p) and math.dist((p["x"], p["y"]), (shooter["x"], shooter["y"])) <= PRESSURE_REACH
-        for p in players
-    )
+def in_the_way(player: dict, shooter: dict) -> bool:
+    """Is the player inside the triangle between the ball and the two posts?
+
+    The same geometry as in_shot_cone in shot_inputs.py, written again here
+    because the demo image has neither pandas nor scikit-learn. A test checks
+    that the two agree.
+    """
+    corners = [(shooter["x"], shooter["y"]), (GOAL[0], POSTS[0]), (GOAL[0], POSTS[1])]
+    sides = []
+    for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1], strict=True):
+        sides.append((bx - ax) * (player["y"] - ay) - (by - ay) * (player["x"] - ax))
+    return all(s >= 0 for s in sides) or all(s <= 0 for s in sides)
+
+
+def can_be_one_on_one(shooter: dict, players: list[dict]) -> bool:
+    """True if no defender stands between the ball and the goal.
+
+    All 1,850 one-on-ones in the data have nobody in that triangle. The
+    reverse isn't true: most shots with an empty triangle aren't one-on-ones.
+    """
+    return not any(is_defender(p) and in_the_way(p, shooter) for p in players)
 
 
 def apply_edit(shooter: dict, players: list[dict], edit: dict,
@@ -157,21 +171,21 @@ def apply_edit(shooter: dict, players: list[dict], edit: dict,
     return dict(shooter), players
 
 
-def consistent_shot(shot: dict, pressure_possible: bool = True) -> dict:
+def consistent_shot(shot: dict, one_on_one_possible: bool = True) -> dict:
     """The shot options with the impossible combinations taken out.
 
     A direct free kick switches off the flags it never comes with and sets
     how the attack started. A header is almost never tagged first time in the
-    data (5 headers out of 6,115), so that flag goes off too. Without an
-    opponent close by (see can_be_pressed), there's no pressure either.
+    data (5 headers out of 6,115), so that flag goes off too. With a
+    defender in the way (see can_be_one_on_one), there's no one-on-one.
     """
     shot = dict(shot)
     if shot.get("is_free_kick"):
         shot.update(dict.fromkeys(FREE_KICK_EXCLUDES, False), play_pattern="From Free Kick")
     if shot.get("is_header"):
         shot["is_first_time"] = False
-    if not pressure_possible:
-        shot["is_under_pressure"] = False
+    if not one_on_one_possible:
+        shot["is_one_on_one"] = False
     return shot
 
 

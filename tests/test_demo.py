@@ -3,6 +3,7 @@
 import math
 import typing
 
+import numpy as np
 import pytest
 
 from football_ai.api import PlayPattern
@@ -14,18 +15,19 @@ from football_ai.demo import (
     allowed_spot,
     apply_edit,
     build_request,
-    can_be_pressed,
+    can_be_one_on_one,
     consistent_shot,
     describe,
     in_box,
+    in_the_way,
     keep_in_heading_range,
     keep_out_of_box,
     rarity_note,
 )
+from football_ai.shot_inputs import in_shot_cone
 
 NO_OPTIONS = {"is_header": False, "is_free_kick": False, "is_first_time": False,
-              "is_one_on_one": False, "is_under_pressure": False,
-              "play_pattern": "Regular Play"}
+              "is_one_on_one": False, "play_pattern": "Regular Play"}
 
 
 def test_the_demo_offers_the_same_play_patterns_as_the_api():
@@ -105,8 +107,7 @@ def test_a_direct_free_kick_rules_out_what_it_never_comes_with():
     shot = consistent_shot({key: True for key in NO_OPTIONS} | {"play_pattern": "From Corner"})
 
     assert shot["is_free_kick"] is True
-    assert not any(shot[k] for k in ("is_header", "is_first_time", "is_one_on_one",
-                                     "is_under_pressure"))
+    assert not any(shot[k] for k in ("is_header", "is_first_time", "is_one_on_one"))
     assert shot["play_pattern"] == "From Free Kick"
 
 
@@ -119,7 +120,7 @@ def test_a_header_is_not_first_time_but_can_follow_a_corner():
 
 
 def test_options_that_go_together_are_kept():
-    shot = NO_OPTIONS | {"is_first_time": True, "is_under_pressure": True}
+    shot = NO_OPTIONS | {"is_first_time": True, "is_one_on_one": True}
 
     assert consistent_shot(shot) == shot
 
@@ -186,22 +187,25 @@ def test_the_last_defender_cant_be_taken_off():
     assert len(players) == len(two) - 1
 
 
-def test_pressure_needs_an_outfield_opponent_close_by():
-    shooter = {"x": 100.0, "y": 40.0}
-    near = {"x": 103.0, "y": 40.0, "teammate": False, "keeper": False}
-
-    assert can_be_pressed(shooter, [near])
-    assert not can_be_pressed(shooter, [near | {"x": 106.0}])        # 6 yards away
-    assert not can_be_pressed(shooter, [near | {"teammate": True}])  # one of his own
-    assert not can_be_pressed(shooter, [near | {"keeper": True}])    # the keeper
-    assert not can_be_pressed(shooter, [])
+def test_the_demo_and_the_api_agree_on_who_is_in_the_way():
+    rng = np.random.default_rng(0)
+    for _ in range(2000):
+        shooter = {"x": rng.uniform(70, 119), "y": rng.uniform(0, 80)}
+        player = {"x": rng.uniform(70, 120), "y": rng.uniform(0, 80)}
+        expected = in_shot_cone(player["x"], player["y"], shooter["x"], shooter["y"])
+        assert in_the_way(player, shooter) == expected
 
 
-def test_no_pressure_without_anyone_to_put_it_on():
-    shot = NO_OPTIONS | {"is_under_pressure": True}
+def test_no_one_on_one_with_a_defender_in_the_way():
+    shooter = {"x": 108.0, "y": 40.0}
+    in_front = {"x": 113.0, "y": 40.0, "teammate": False, "keeper": False}
 
-    assert consistent_shot(shot, pressure_possible=False)["is_under_pressure"] is False
-    assert consistent_shot(shot)["is_under_pressure"] is True
+    assert not can_be_one_on_one(shooter, [in_front])
+    assert can_be_one_on_one(shooter, [in_front | {"y": 60.0}])        # off to the side
+    assert can_be_one_on_one(shooter, [in_front | {"teammate": True}])  # one of his own
+    assert can_be_one_on_one(shooter, [in_front | {"keeper": True}])    # the keeper
+    shot = NO_OPTIONS | {"is_one_on_one": True}
+    assert consistent_shot(shot, one_on_one_possible=False)["is_one_on_one"] is False
 
 
 @pytest.mark.parametrize("xg, words", [
