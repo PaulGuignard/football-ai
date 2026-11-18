@@ -14,6 +14,8 @@ experiment is tracked in MLflow. A demo lets you drag a shooter and the
 players around him on a pitch and get the xG back from an API running in
 Docker. The value of every action comes next.
 
+![Dragging the players on the pitch and ticking options, the xG updates each time](docs/figures/demo.gif)
+
 ![Where shots are taken and how often they score](docs/figures/shot_map.png)
 
 *The left map shows where the 37,481 shots of the four leagues were taken
