@@ -19,7 +19,7 @@ def test_health_says_which_model_is_served(client):
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["model"]["model_name"] == "gradient boosting v2"
+    assert response.json()["model"]["model_name"] == "gradient boosting v2, monotonic"
 
 
 def test_a_shot_gets_an_xg_and_its_inputs(client):

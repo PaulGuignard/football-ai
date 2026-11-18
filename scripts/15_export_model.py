@@ -22,18 +22,22 @@ from football_ai.xg import build_boosting_model, load_shots, predict_xg, train
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "data" / "football.duckdb"
 
-# The v2 boosting kept in 12_compare_feature_sets.py
+# The v2 boosting kept in 12_compare_feature_sets.py, with the constraint
+# from 16_monotonic_xg.py: further out never raises the xG
 BOOSTING = {"learning_rate": 0.05, "max_leaf_nodes": 4, "min_samples_leaf": 20, "max_iter": 1000}
 
 KEEPER_ON_HIS_LINE = {"x": 119.0, "y": 40.0, "teammate": False, "keeper": True}
+# A shot always has some defender around: only 1 of the 37,481 had none
+DEFENDER_ON_THE_EDGE = {"x": 112.0, "y": 47.0, "teammate": False, "keeper": False}
 
 
 def main() -> None:
     with duckdb.connect(str(DB_PATH), read_only=True) as con:
         shots = load_shots(con, freeze_frames=True)
 
-    model = train(build_boosting_model("v2", **BOOSTING), shots)
-    save_model(model, model_name="gradient boosting v2", settings=BOOSTING, shots=len(shots))
+    model = train(build_boosting_model("v2", monotonic=True, **BOOSTING), shots)
+    save_model(model, model_name="gradient boosting v2, monotonic",
+               settings={**BOOSTING, "monotonic": True}, shots=len(shots))
     print(f"Trained on {len(shots):,} shots, saved {MODEL_PATH.relative_to(PROJECT_ROOT)}")
     print(f"File size: {MODEL_PATH.stat().st_size / 1024:.0f} KB")
 
@@ -41,14 +45,15 @@ def main() -> None:
     reloaded = load_model()
     assert predict_xg(reloaded, shots).equals(predict_xg(model, shots))
 
-    print("\nA few shots with the keeper on his line:")
+    print("\nA few shots with the keeper on his line and a defender off to the side:")
     for label, x, y, header in [
         ("penalty spot, foot", 108.0, 40.0, False),
         ("penalty spot, header", 108.0, 40.0, True),
         ("edge of the box", 102.0, 40.0, False),
         ("tight angle", 114.0, 66.0, False),
+        ("50 yards out, foot", 70.0, 40.0, False),
     ]:
-        row = shot_row(x, y, [KEEPER_ON_HIS_LINE], is_header=header)
+        row = shot_row(x, y, [KEEPER_ON_HIS_LINE, DEFENDER_ON_THE_EDGE], is_header=header)
         print(f"  {label:<22} xG {predict_xg(reloaded, row).iloc[0]:.3f}")
 
 
