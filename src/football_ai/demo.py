@@ -4,8 +4,10 @@ Kept apart from the page so it can be tested, and kept light: no model and
 no scikit-learn here, since the demo only talks to the API. The pitch itself
 is drawn in the browser (app/pitch), which sends back one edit each time a
 shirt is dropped. This module applies those edits and keeps the shot options
-consistent with each other.
+consistent with each other and with the picture.
 """
+
+import math
 
 # The ways an attack can start, as StatsBomb names them (same list as the API)
 PLAY_PATTERNS = [
@@ -14,11 +16,11 @@ PLAY_PATTERNS = [
 ]
 
 # A starting picture: a shot from the penalty spot, the keeper on his line, a
-# defender in the way and a teammate on the side
+# defender in the way, close enough to press, and a teammate on the side
 DEFAULT_SHOOTER = {"x": 108.0, "y": 40.0}
 DEFAULT_PLAYERS = [
     {"x": 119.0, "y": 40.0, "teammate": False, "keeper": True},
-    {"x": 113.0, "y": 40.5, "teammate": False, "keeper": False},
+    {"x": 112.5, "y": 40.5, "teammate": False, "keeper": False},
     {"x": 110.0, "y": 46.0, "teammate": True, "keeper": False},
 ]
 # A freeze frame never shows more than the 21 other players
@@ -34,6 +36,13 @@ NEWCOMERS = {
 # In the 37,481 shots, a direct free kick is never a header, never first time
 # and never under pressure, and it always comes from a free kick
 FREE_KICK_EXCLUDES = ("is_header", "is_first_time", "is_one_on_one", "is_under_pressure")
+# 99% of the shots under pressure have an outfield opponent this close (yards)
+PRESSURE_REACH = 5.0
+# The longest header in the data is 27 yards out; 30 leaves a little room
+HEADER_REACH = 30.0
+# Fewer than 1% of the shots are taken from further out than this
+RARE_DISTANCE = 40.0
+GOAL = (120.0, 40.0)
 
 
 def on_pitch(x: float, y: float) -> bool:
@@ -41,12 +50,77 @@ def on_pitch(x: float, y: float) -> bool:
     return 60 <= x <= 120 and 0 <= y <= 80
 
 
+def in_box(x: float, y: float) -> bool:
+    """True if the spot is inside the penalty area. The lines count as outside."""
+    return x > 102 and 18 < y < 62
+
+
+def keep_out_of_box(spot: dict) -> dict:
+    """The spot itself, or the nearest point on the edge of the box if it's inside.
+
+    Used for direct free kicks: none of the 1,749 in the data is taken from
+    inside the box, since a foul there gives a penalty.
+    """
+    x, y = spot["x"], spot["y"]
+    if not in_box(x, y):
+        return dict(spot)
+    ways_out = [
+        (x - 102, {"x": 102.0, "y": y}),   # through the front
+        (y - 18, {"x": x, "y": 18.0}),     # through one side
+        (62 - y, {"x": x, "y": 62.0}),     # or the other
+    ]
+    return min(ways_out, key=lambda way: way[0])[1]
+
+
+def keep_in_heading_range(spot: dict) -> dict:
+    """The spot itself, or the point HEADER_REACH yards out on the way to goal if it's further.
+
+    Nobody heads the ball in from 50 yards: there isn't the power.
+    """
+    distance = math.dist((spot["x"], spot["y"]), GOAL)
+    if distance <= HEADER_REACH:
+        return dict(spot)
+    pull = HEADER_REACH / distance
+    return {"x": GOAL[0] + (spot["x"] - GOAL[0]) * pull,
+            "y": GOAL[1] + (spot["y"] - GOAL[1]) * pull}
+
+
+def allowed_spot(spot: dict, free_kick: bool = False, header: bool = False) -> dict:
+    """Where the shooter ends up given the options: out of the box, within heading range."""
+    if free_kick:
+        spot = keep_out_of_box(spot)
+    if header:
+        spot = keep_in_heading_range(spot)
+    return dict(spot)
+
+
+def rarity_note(distance: float) -> str:
+    """A warning for shots taken from where the model has seen almost none."""
+    if distance > RARE_DISTANCE:
+        return "The model has seen very few shots from this far, so take this number with care."
+    return ""
+
+
 def is_their_keeper(player: dict) -> bool:
     """The keeper of the defending side, the only one the model looks at."""
     return player["keeper"] and not player["teammate"]
 
 
-def apply_edit(shooter: dict, players: list[dict], edit: dict) -> tuple[dict, list[dict]]:
+def is_defender(player: dict) -> bool:
+    """An outfield player of the defending side."""
+    return not player["teammate"] and not player["keeper"]
+
+
+def can_be_pressed(shooter: dict, players: list[dict]) -> bool:
+    """True if an outfield opponent is close enough to put the shooter under pressure."""
+    return any(
+        is_defender(p) and math.dist((p["x"], p["y"]), (shooter["x"], shooter["y"])) <= PRESSURE_REACH
+        for p in players
+    )
+
+
+def apply_edit(shooter: dict, players: list[dict], edit: dict,
+               free_kick: bool = False, header: bool = False) -> tuple[dict, list[dict]]:
     """The new shooter and players after one edit made on the pitch.
 
     An edit is one of
@@ -55,6 +129,9 @@ def apply_edit(shooter: dict, players: list[dict], edit: dict) -> tuple[dict, li
       {"action": "remove", "who": a player's index}
     Nothing is changed in place. Anything that doesn't make sense (a spot off
     the pitch, an index that no longer exists) leaves the picture as it was.
+    The last defender can't be taken off: only 1 of the 37,481 shots had no
+    defender anywhere in the picture, so the model knows nothing about it.
+    The shooter is kept where the options allow (see allowed_spot).
     """
     players = [dict(p) for p in players]
     action = edit.get("action")
@@ -63,7 +140,7 @@ def apply_edit(shooter: dict, players: list[dict], edit: dict) -> tuple[dict, li
 
     if action == "move" and on_pitch(*spot):
         if who == "shooter":
-            return {"x": spot[0], "y": spot[1]}, players
+            return allowed_spot({"x": spot[0], "y": spot[1]}, free_kick, header), players
         if isinstance(who, int) and 0 <= who < len(players):
             players[who].update(x=spot[0], y=spot[1])
     elif action == "add" and edit.get("kind") in NEWCOMERS and on_pitch(*spot):
@@ -74,22 +151,27 @@ def apply_edit(shooter: dict, players: list[dict], edit: dict) -> tuple[dict, li
         if len(players) < MAX_PLAYERS:
             players.append(newcomer)
     elif action == "remove" and isinstance(who, int) and 0 <= who < len(players):
-        del players[who]
+        last_defender = is_defender(players[who]) and sum(map(is_defender, players)) == 1
+        if not last_defender:
+            del players[who]
     return dict(shooter), players
 
 
-def consistent_shot(shot: dict) -> dict:
+def consistent_shot(shot: dict, pressure_possible: bool = True) -> dict:
     """The shot options with the impossible combinations taken out.
 
     A direct free kick switches off the flags it never comes with and sets
     how the attack started. A header is almost never tagged first time in the
-    data (5 headers out of 6,115), so that flag goes off too.
+    data (5 headers out of 6,115), so that flag goes off too. Without an
+    opponent close by (see can_be_pressed), there's no pressure either.
     """
     shot = dict(shot)
     if shot.get("is_free_kick"):
         shot.update(dict.fromkeys(FREE_KICK_EXCLUDES, False), play_pattern="From Free Kick")
     if shot.get("is_header"):
         shot["is_first_time"] = False
+    if not pressure_possible:
+        shot["is_under_pressure"] = False
     return shot
 
 

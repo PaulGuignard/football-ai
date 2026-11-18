@@ -12,6 +12,8 @@ const NS = "http://www.w3.org/2000/svg";
 const NEAREST_X = 66;
 const DEPTH = 120 - NEAREST_X;
 const BENCH_Y = DEPTH + 6;
+// Same limit as HEADER_REACH in demo.py
+const HEADER_REACH = 30;
 // A shirt, about 3 yards wide, centred on the player
 const SHIRT =
   "M-.78-2 L-1.78-1.67 L-2.22-.67 L-1.56-.33 L-1.33-.67 L-1.33 2 L1.33 2 " +
@@ -26,6 +28,39 @@ function el(name, attrs = {}, parent = null) {
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
   if (parent) parent.appendChild(node);
   return node;
+}
+
+// Where the shooter can stand, as an SVG point. He stays on the pitch, outside
+// the box for a direct free kick (a foul in there would be a penalty) and
+// within 30 yards for a header. Mirrors allowed_spot in demo.py
+function shooterSpot(state, p) {
+  let across = Math.min(Math.max(p.x, 0), 80);
+  let down = Math.min(Math.max(p.y, 0), DEPTH);
+  if (state.data && state.data.freeKick && down < 18 && across > 18 && across < 62) {
+    // Out by the nearest edge of the box
+    const ways = [[18 - down, across, 18], [across - 18, 18, down], [62 - across, 62, down]];
+    ways.sort((a, b) => a[0] - b[0]);
+    [, across, down] = ways[0];
+  }
+  const reach = Math.hypot(across - 40, down);
+  if (state.data && state.data.header && reach > HEADER_REACH) {
+    // Pulled back towards the middle of the goal
+    across = 40 + (across - 40) * HEADER_REACH / reach;
+    down = down * HEADER_REACH / reach;
+  }
+  return { x: across, y: down };
+}
+
+// The shooter and the last defender can't leave the pitch: they stop at its
+// edge. A shot with no defender anywhere happened once in 37,481
+function staysOn(state, g) {
+  if (g.dataset.who === "shooter") return true;
+  if (g.dataset.new || g.dataset.kind !== "defender" || !state.data) return false;
+  return state.data.players.filter((p) => !p.teammate && !p.keeper).length <= 1;
+}
+
+function clampToPitch(p) {
+  return { x: Math.min(Math.max(p.x, 0), 80), y: Math.min(Math.max(p.y, 0), DEPTH) };
 }
 
 function kindOf(p) {
@@ -68,6 +103,7 @@ function setup(root) {
       <div class="score"><span class="xg-label">xG</span><span class="xg-value">-</span></div>
       <p class="words"></p>
       <p class="facts"></p>
+      <p class="note"></p>
     </div>`;
   const svg = el("svg", { viewBox: `-3 -4 86 ${DEPTH + 18}`, class: "pitch", role: "img",
                           "aria-label": "Half a football pitch with the shooter and the other players" });
@@ -138,11 +174,11 @@ function setup(root) {
     } else if (!drag.moved) {
       render(state, state.data);   // a click, not a drag: put it back
     } else if (who === "shooter") {
-      // The shooter can't leave: he stops at the edge
-      edit = { action: "move", who, x: Math.min(Math.max(x, NEAREST_X), 120),
-               y: Math.min(Math.max(y, 0), 80) };
-    } else if (inside) {
-      edit = { action: "move", who: Number(who), x, y };
+      const spot = shooterSpot(state, p);
+      edit = { action: "move", who, x: 120 - spot.y, y: spot.x };
+    } else if (inside || staysOn(state, drag.g)) {
+      const spot = clampToPitch(p);
+      edit = { action: "move", who: Number(who), x: 120 - spot.y, y: spot.x };
     } else {
       drag.g.remove();
       edit = { action: "remove", who: Number(who) };
@@ -163,10 +199,12 @@ function setup(root) {
 
 // Moves a shirt to an SVG point and, for the shooter, the cone and the ball with it
 function place(state, g, p) {
+  if (g.dataset.who === "shooter") p = shooterSpot(state, p);
+  else if (staysOn(state, g)) p = clampToPitch(p);
   g.setAttribute("transform", `translate(${p.x} ${p.y})`);
   const x = 120 - p.y, y = p.x;
   const inside = x >= NEAREST_X && x <= 120 && y >= 0 && y <= 80;
-  g.classList.toggle("leaving", !inside && g.dataset.who !== "shooter");
+  g.classList.toggle("leaving", !inside);
   if (g.dataset.who === "shooter") {
     drawCone(state, p.x, p.y);
     const yards = Math.hypot(120 - x, 40 - y);
@@ -218,6 +256,7 @@ function render(state, data) {
   q(".xg-value").textContent = board.value;
   q(".words").textContent = board.words;
   q(".facts").textContent = board.facts;
+  q(".note").textContent = board.note || "";
   state.root.classList.toggle("broken", Boolean(board.broken));
   state.hint.textContent = data.hint;
 }
