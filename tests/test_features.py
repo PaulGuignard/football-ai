@@ -146,6 +146,15 @@ def test_shot_with_nobody_in_the_picture_still_gets_a_row(con):
     assert pd.isna(row["keeper_to_goal"])
 
 
+@pytest.mark.parametrize("freeze_frames", [False, True])
+def test_shots_always_load_in_the_same_order(con, freeze_frames):
+    for event_id in ["s3", "s1", "s2"]:
+        add_shot(con, event_id)
+    freeze_features(con)
+
+    assert load_shots(con, freeze_frames)["shot_id"].tolist() == ["s1", "s2", "s3"]
+
+
 def test_loaded_freeze_inputs_are_plain_numbers(con):
     # One shot with a keeper, one with nobody in the picture: gaps to handle
     add_shot(con, "s1")

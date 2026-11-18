@@ -1,0 +1,18 @@
+# The whole demo with one command: docker compose up --build
+# then open http://127.0.0.1:8501 (the demo) or http://127.0.0.1:8000/docs (the API)
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+  app:
+    build:
+      context: .
+      dockerfile: app.Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      # Inside compose, containers reach each other by service name
+      API_URL: http://api:8000
+    depends_on:
+      - api

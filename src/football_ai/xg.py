@@ -31,6 +31,8 @@ FEATURES = NUMERIC_FEATURES + FLAG_FEATURES + CATEGORICAL_FEATURES
 FREEZE_FEATURES = ["defenders_in_cone", "nearest_defender", "keeper_to_goal", "keeper_in_cone"]
 FEATURE_SETS = {"v1": FEATURES, "v2": FEATURES + FREEZE_FEATURES}
 TARGET = "is_goal"
+# -1: the xG never goes up with it, +1: never down (everything else equal)
+MONOTONIC = {"distance": -1, "angle": 1}
 
 
 def load_shots(con: duckdb.DuckDBPyConnection, freeze_frames: bool = False) -> pd.DataFrame:
@@ -38,13 +40,17 @@ def load_shots(con: duckdb.DuckDBPyConnection, freeze_frames: bool = False) -> p
 
     With freeze_frames=True, the columns of shot_freeze_features are added
     (that table has to be built first, see football_ai.features).
+    Always in the same order, by shot_id: a join in DuckDB runs on several
+    threads and hands rows back in an order that changes with the machine,
+    and the order decides which shots early stopping holds back.
     """
     if not freeze_frames:
-        return con.sql("SELECT * FROM shot_features").df()
+        return con.sql("SELECT * FROM shot_features ORDER BY shot_id").df()
     shots = con.sql("""
         SELECT *
         FROM shot_features
         LEFT JOIN shot_freeze_features USING (shot_id)
+        ORDER BY shot_id
     """).df()
     # DuckDB hands back integer columns with gaps as pandas' nullable integers
     # (pd.NA), which scikit-learn refuses. Plain floats with NaN instead
@@ -97,7 +103,9 @@ def build_logistic_model(feature_set: str = "v1") -> Pipeline:
     ])
 
 
-def build_boosting_model(feature_set: str = "v1", seed: int = 42, **settings) -> Pipeline:
+def build_boosting_model(
+    feature_set: str = "v1", seed: int = 42, monotonic: bool = False, **settings
+) -> Pipeline:
     """Gradient boosting: many small trees, each one fixing what the others got wrong.
 
     Without settings, scikit-learn's defaults. Any setting of the model can be
@@ -106,6 +114,11 @@ def build_boosting_model(feature_set: str = "v1", seed: int = 42, **settings) ->
     are held back and trees stop being added once they no longer help there.
     The seed fixes which shots those are. Missing values need no filling in:
     at each question, the trees learn which way to send them.
+
+    With monotonic=True, everything else being equal, the xG can only go down
+    when the shot is taken from further out and only go up when the goal
+    looks wider (MONOTONIC). The data alone can't teach that where shots are
+    rare: 6 of the 29 direct free kicks taken from 40 to 50 yards went in.
     """
     preparation = ColumnTransformer([
         # Trees only ask "is distance below 9?", so the scale doesn't matter
@@ -115,6 +128,10 @@ def build_boosting_model(feature_set: str = "v1", seed: int = 42, **settings) ->
         ("categorical", OneHotEncoder(handle_unknown="ignore", sparse_output=False),
          CATEGORICAL_FEATURES),
     ])
+    if monotonic:
+        # Named columns, so the constraints can say which input they're about
+        preparation.set_output(transform="pandas")
+        settings["monotonic_cst"] = {f"numeric__{name}": way for name, way in MONOTONIC.items()}
     return Pipeline([
         ("preparation", preparation),
         ("model", HistGradientBoostingClassifier(random_state=seed, **settings)),
@@ -154,18 +171,22 @@ def evaluate(is_goal: pd.Series, xg: pd.Series) -> dict[str, float]:
 
 
 def cross_validate_by_match(
-    build_model: Callable[[], Pipeline], shots: pd.DataFrame, n_splits: int = 5
+    build_model: Callable[[], Pipeline], shots: pd.DataFrame, n_splits: int = 5, seed: int = 42
 ) -> np.ndarray:
     """Log loss of a model on each of n_splits folds of whole matches.
 
     The matches are put into n_splits groups. Each group in turn is held out:
     the model learns on the others and is scored on it. Meant for the training
     set only, so that settings are chosen without ever looking at the test set.
-    The folds don't depend on chance, so every setting is scored on exactly
-    the same ones and can be compared fold by fold.
+    The seed fixes the folds, so every setting is scored on exactly the same
+    ones and can be compared fold by fold.
     """
     losses = []
-    folds = GroupKFold(n_splits=n_splits).split(shots, groups=shots["match_id"])
+    # Matches dealt out at random from a fixed seed. Without shuffle,
+    # GroupKFold sorts matches by their number of shots, and with so many
+    # ties the result depended on the processor: other folds on another laptop
+    splitter = GroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    folds = splitter.split(shots, groups=shots["match_id"])
     for learn_idx, check_idx in folds:
         learn, check = shots.iloc[learn_idx], shots.iloc[check_idx]
         model = train(build_model(), learn)

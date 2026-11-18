@@ -1,0 +1,17 @@
+# The demo's look: the grass and chalk of the pitch, Barlow like stadium signs
+
+[theme]
+base = "light"
+primaryColor = "#2f6c36"
+backgroundColor = "#f3f6f1"
+secondaryBackgroundColor = "#e3eadf"
+textColor = "#12201a"
+font = "Barlow:https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap"
+headingFont = "Barlow Condensed:https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap"
+baseRadius = "small"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

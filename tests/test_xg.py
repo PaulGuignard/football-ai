@@ -176,6 +176,16 @@ def test_cross_validation_gives_one_log_loss_per_fold():
     assert (losses > 0).all()
 
 
+def test_cross_validation_folds_depend_on_the_matches_not_the_row_order():
+    shots = make_model_shots()
+    shuffled = shots.sample(frac=1, random_state=3)
+
+    first = cross_validate_by_match(build_logistic_model, shots)
+    second = cross_validate_by_match(build_logistic_model, shuffled)
+
+    assert np.allclose(first, second)
+
+
 def test_cross_validation_folds_are_the_same_every_time():
     shots = make_model_shots()
     first = cross_validate_by_match(build_logistic_model, shots)
@@ -206,6 +216,29 @@ def test_expected_goals_is_the_sum_of_xg():
 
     assert scores["goals"] == 1
     assert scores["expected_goals"] == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize("feature_set", ["v1", "v2"])
+def test_a_monotonic_boosting_never_rises_with_distance(feature_set):
+    shots = make_v2_shots()
+    # A few far shots that went in: the kind of noise the constraint is for
+    far = shots["distance"] > 35
+    shots.loc[far[far].index[:6], "is_goal"] = 1
+    model = train(build_boosting_model(feature_set, monotonic=True), shots)
+
+    same_shot_further_out = pd.concat([shots.iloc[[1]]] * 40, ignore_index=True)
+    same_shot_further_out["distance"] = np.linspace(2, 60, 40)
+    xg = predict_xg(model, same_shot_further_out)
+
+    assert (np.diff(xg) <= 1e-12).all()
+
+
+def test_the_monotonic_option_reaches_the_model():
+    plain = build_boosting_model("v2").named_steps["model"]
+    constrained = build_boosting_model("v2", monotonic=True).named_steps["model"]
+
+    assert plain.monotonic_cst is None
+    assert constrained.monotonic_cst == {"numeric__distance": -1, "numeric__angle": 1}
 
 
 def test_coefficients_have_one_row_per_input_and_readable_names():

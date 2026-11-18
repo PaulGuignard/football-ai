@@ -774,3 +774,126 @@ closes the xG part.
 
 **Next.** A demo where you place a shot on a pitch and get its xG back from an
 API.
+
+## A demo behind an API (16/11 to 18/11)
+
+`scripts/14_check_shot_inputs.py`, `scripts/15_export_model.py`,
+`src/football_ai/shot_inputs.py`, `src/football_ai/api.py`,
+`src/football_ai/demo.py`, `app/`, `Dockerfile`, `app.Dockerfile`,
+`docker-compose.yml`
+
+**The goal.** Anyone should be able to place a shot and the players around it
+on a pitch and get its xG back, without installing the project or loading
+the data.
+
+**The same inputs in training and in the API.** The model learnt from inputs
+computed in SQL over the whole database. The API gets one shot at a time in
+JSON and has no database, so it computes the same inputs in Python. If the
+two ever disagree, the model gets inputs it was not trained on and nobody
+notices. A script runs the Python version on all 37,481 shots and compares
+it with the SQL tables, and the largest difference is zero. A test does the
+same on 300 random shots every time the tests run.
+
+**The model file.** The final model is trained on every shot, test matches
+included, since the evaluation is over. It is saved with skops rather than
+pickle because skops only loads the types it is told to trust and can't run
+code hidden in the file. A small JSON file next to it records the
+scikit-learn version and the settings. The file is about 1.5 MB, so it goes
+into Git and the API needs nothing else to start.
+
+**The API.** FastAPI with two routes. `GET /health` says which model is
+served and `POST /xg` takes a shot and the players and returns the xG with
+the inputs computed for it. Pydantic checks every request, so a shot off the
+pitch, more than 21 players or an unknown play pattern gets a clear error
+instead of a wrong number.
+
+**Docker.** One image for the API and one for the demo, started together by
+docker compose. Each one installs only what it needs with uv. The API image
+has no PyTorch, MLflow or plotting libraries, which are only used for
+training.
+
+**The demo.** The first version drew the pitch with matplotlib on the server
+and sent it as an image after every click. It lagged, the image was blurry
+once stretched and a player could not follow the mouse while being dragged.
+The pitch is now a small custom Streamlit component that draws it in the
+browser as SVG. A shirt follows the mouse without asking the server anything
+and only the drop sends the new position to Python, which calls the API.
+That takes about 360 lines of JavaScript and CSS kept in `app/`. Everything
+that computes stays in Python.
+
+**Options that can't go together.** Playing with the demo showed shots that
+never happen in real football. Each rule below comes from the data and not
+from a guess.
+
+- None of the 1,749 direct free kicks was taken from inside the box, and the
+  closest was 18.3 yards out. With a free kick ticked the shooter stops at
+  the edge of the box. A direct free kick is also never a header, never hit
+  first time and never under pressure.
+- The longest header in the data was taken 27 yards out. With a header
+  ticked the shooter can't go further than 30 yards from goal.
+- 99% of the 9,809 shots under pressure had an outfield opponent within 5
+  yards. Without one, the pressure box is greyed out.
+- Only 1 shot of the 37,481 had no defender anywhere in the picture, so the
+  last defender can't be taken off the pitch. To try a one-on-one, he goes
+  behind the shooter like in a real match.
+- Fewer than 1% of the shots are taken from further than 40 yards. Past that
+  the screen says the number should be taken with care.
+
+## An xG that never rises with distance, and two hidden bugs (18/11)
+
+`src/football_ai/xg.py`, `scripts/16_monotonic_xg.py`
+
+**What the demo showed.** A direct free kick was worth 0.05 from 30 yards
+and 0.10 from 54. Only 29 direct free kicks were taken from 40 to 50 yards
+and 6 of them went in. Four of those were taken from near the touchline and
+look like crosses nobody touched, and StatsBomb gave each of them less than
+1%. Six goals out of 29 were enough for the trees to learn that very long
+free kicks score more. It is noise and not football. Trees also can't guess
+past what they have seen, so a header from 50 yards got the same xG as one
+from 30.
+
+**The fix.** Gradient boosting in scikit-learn accepts monotonic
+constraints. With everything else equal, the xG can now only go down when
+the distance goes up and only go up when the goal looks wider. This does not
+stop a close shot with three defenders in the way from being worth less than
+a long one with a clear view, since the defenders are other inputs. It only
+rules out the same shot being worth more from further out.
+
+| | Cross-validated log loss | Test log loss | Test AUC | Gap closed |
+|---|---|---|---|---|
+| Gradient boosting, v2 | 0.25155 | 0.2529 | 0.8125 | 96.2% |
+| Same with the constraint | 0.25168 | 0.2527 | 0.8129 | 96.5% |
+
+The constraint does better on 2 of the 5 folds. On two other ways of
+splitting the same matches into folds the difference went from -0.0001 to
++0.0006, so its cost is within the noise of the split. On the test matches
+it is even slightly better.
+
+![xG against distance with and without the constraint](figures/xg_by_distance.png)
+
+The curves are drawn with the keeper on his line and a defender beside the
+shooter. With the constraint they stay flat where the data runs out instead
+of climbing. The model served by the API is now the constrained one.
+
+**Two bugs found by comparing two machines.** My laptop and another machine
+gave slightly different scores with the same code and the same data. The
+gaps were small, about 0.0005, but a project should give the same numbers
+to anyone who runs it.
+
+- Loading the shots joins two tables in DuckDB, which works on several
+  threads and returns the rows in an order that depends on the machine. The
+  order decides which shots early stopping holds back, so the trees came out
+  slightly different. The shots are now sorted by their id when loaded.
+- Without shuffling, `GroupKFold` sorts the matches by their number of shots
+  before dealing them into folds. The 1,213 training matches have only 37
+  different numbers of shots, and the order of the ties depends on the
+  processor NumPy runs on. The matches are now dealt out at random from a
+  fixed seed.
+
+Both machines now give the same numbers to the last digit. The fix moved the
+test score of the v2 boosting from 0.2531 to 0.2529. The cross-validated
+scores in the earlier entries were computed on my laptop with the old folds.
+Each comparison there stays fair because all its models shared the same
+folds, so they were not run again.
+
+**Next.** The value of every action, the main goal of the project.
