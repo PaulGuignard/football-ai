@@ -16,12 +16,6 @@ Docker. The value of every action comes next.
 
 ![Dragging the players on the pitch and ticking options, the xG updates each time](docs/figures/demo.gif)
 
-![Where shots are taken and how often they score](docs/figures/shot_map.png)
-
-*The left map shows where the 37,481 shots of the four leagues were taken
-from and the right one shows how often each zone scores. Goals come from a
-much smaller area than shots.*
-
 ## What's done so far
 
 - **Data.** StatsBomb open data for four complete 2015/16 seasons of the
@@ -37,6 +31,12 @@ much smaller area than shots.*
   - The shot angle adds information that distance alone doesn't give.
   - Shots from counter-attacks score 15.5% of the time against about 10% for
     the others even though they are taken from about the same distance.
+
+  ![Where shots are taken and how often they score](docs/figures/shot_map.png)
+
+  *The left map shows where the 37,481 shots of the four leagues were taken
+  from and the right one shows how often each zone scores. Goals come from a
+  much smaller area than shots.*
 - **xG models.** A logistic regression and gradient boosting built first on
   eight simple inputs and then on the players' positions too, all tested on
   304 matches they never saw in training.
